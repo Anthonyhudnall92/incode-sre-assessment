@@ -1,0 +1,7 @@
+# Copy to backend.hcl (gitignored) or generate it with `make backend-config`.
+bucket       = "sre-demo-tfstate-<ACCOUNT_ID>-us-east-1"
+key          = "sre-demo/main.tfstate"
+region       = "us-east-1"
+encrypt      = true
+kms_key_id   = "arn:aws:kms:us-east-1:<ACCOUNT_ID>:key/<KEY_ID>"
+use_lockfile = true

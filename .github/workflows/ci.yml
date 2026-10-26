@@ -1,0 +1,118 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege for the workflow token.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    name: Terraform fmt / validate / tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.12.0"
+
+      - name: fmt
+        run: terraform fmt -check -recursive
+
+      - name: validate (bootstrap)
+        run: |
+          terraform -chdir=bootstrap init -backend=false -input=false
+          terraform -chdir=bootstrap validate
+
+      - name: validate (main stack)
+        run: |
+          terraform -chdir=terraform init -backend=false -input=false
+          terraform -chdir=terraform validate
+
+      - uses: terraform-linters/setup-tflint@v4
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive --format compact
+
+  security-scan:
+    name: IaC / manifest / Dockerfile scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Scan the manifests exactly as they will be applied (templates rendered
+      # with placeholder values), not the raw ${VAR} templates.
+      - name: render manifests
+        env:
+          APP_NAME: demo-app
+          APP_NAMESPACE: demo
+          APP_ROLE_ARN: arn:aws:iam::000000000000:role/ci-placeholder
+          APP_IMAGE: 000000000000.dkr.ecr.us-east-1.amazonaws.com/ci/demo-app@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          DB_HOST: db.example.internal
+          DB_PORT: "5432"
+          DB_NAME: demo
+          DB_SECRET_ARN: arn:aws:secretsmanager:us-east-1:000000000000:secret:ci-placeholder
+          AWS_REGION: us-east-1
+          VPC_CIDR: 10.40.0.0/16
+          DB_SUBNET_CIDRS: 10.40.10.0/24 10.40.11.0/24
+          CERT_ARN: arn:aws:acm:us-east-1:000000000000:certificate/ci-placeholder
+          WAF_ARN: arn:aws:wafv2:us-east-1:000000000000:regional/webacl/ci/placeholder
+        run: scripts/render-manifests.sh rendered
+
+      - name: kubeconform (schema validation)
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -strict -summary -ignore-missing-schemas rendered/
+
+      - name: checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          config_file: .checkov.yaml
+
+      - name: gitleaks (no secrets in history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  app:
+    name: App tests + image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: unit tests
+        working-directory: app
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -v
+
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: app/Dockerfile
+
+      - name: build image
+        run: docker build -t demo-app:ci app
+
+      - name: trivy image scan (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: demo-app:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

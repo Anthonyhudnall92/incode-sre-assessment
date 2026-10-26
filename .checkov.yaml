@@ -1,0 +1,28 @@
+# Every skip below is a deliberate, documented trade-off (see README
+# "Security exceptions"). Anything not listed here fails CI.
+compact: true
+quiet: true
+framework:
+  - terraform
+  - kubernetes
+  - dockerfile
+  - github_actions
+skip-path:
+  - k8s/          # raw ${VAR} templates; CI scans the rendered/ output instead
+  - .terraform/
+skip-check:
+  # --- Cost trade-offs for a short-lived exercise environment -----------------
+  - CKV_AWS_157   # RDS Multi-AZ: off for cost (var.db_multi_az)
+  - CKV_AWS_293   # RDS deletion protection: off so the env can be torn down (var.db_deletion_protection)
+  - CKV_AWS_338   # Log retention >= 1 year: 14 days for a demo (var.log_retention_days)
+  - CKV_AWS_353   # Performance Insights: not supported on db.t4g.micro
+  # --- Design decisions -------------------------------------------------------
+  - CKV_AWS_161   # RDS IAM auth: credentials are RDS-managed + rotated in Secrets Manager (required by the brief)
+  - CKV_AWS_394   # AZ data source: slice() to a fixed az_count, so new AZs do not change the result
+  - CKV_TF_1      # Registry modules are pinned by version + .terraform.lock.hcl; commit-hash pinning is a TODO
+  # --- KMS key policies -------------------------------------------------------
+  # Key policies must use Resource "*" (it means "this key") and the account
+  # root statement is the standard admin delegation to IAM.
+  - CKV_AWS_109
+  - CKV_AWS_111
+  - CKV_AWS_356

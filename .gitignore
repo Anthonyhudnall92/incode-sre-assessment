@@ -1,0 +1,49 @@
+# --- Terraform ---------------------------------------------------------------
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Variable files and backend config can contain account IDs, IPs and emails.
+# Only the *.example templates are committed.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+backend.hcl
+!backend.hcl.example
+
+# NOTE: .terraform.lock.hcl is intentionally committed (provider pinning).
+
+# --- Kubernetes / cloud credentials -------------------------------------------
+kubeconfig*
+*.kubeconfig
+.kube/
+.aws/
+*.pem
+*.key
+*.crt
+.env
+.env.*
+rendered/
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# --- OS / editors ---------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp

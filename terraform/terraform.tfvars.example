@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+
+region = "us-east-1"
+
+# Your public IP as a /32 — the only network allowed to reach the EKS API.
+#   curl -s https://checkip.amazonaws.com
+admin_cidrs = ["203.0.113.10/32"]
+
+# Optional: HTTPS on the ALB via ACM. Requires a Route 53 hosted zone you own.
+# domain_name     = "demo.example.com"
+# route53_zone_id = "Z0123456789ABCDEFGHIJ"
+
+# Optional: receive CloudWatch alarm notifications.
+# alert_email = "you@example.com"
