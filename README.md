@@ -6,8 +6,8 @@ demo API that uses it, built **secure by default** and instrumented for operatio
 | | |
 |---|---|
 | **IaC** | Terraform ≥ 1.10, AWS provider 5.x, `terraform-aws-modules` (vpc, eks, iam) |
-| **Compute** | EKS 1.34, one managed node group on Graviton (`t4g.medium`, AL2023) |
-| **Data** | RDS PostgreSQL 17, `db.t4g.micro`, private, TLS-only |
+| **Compute** | EKS 1.34, one managed node group (`t3.medium`, AL2023 x86_64) |
+| **Data** | RDS PostgreSQL 17, `db.t3.micro`, private, TLS-only |
 | **Edge** | ALB via AWS Load Balancer Controller, ACM TLS, AWS WAF |
 | **Observability** | Container Insights, Fluent Bit → CloudWatch Logs, log-derived app metrics, alarms → SNS, dashboard |
 | **Going further** | Observability (primary), defense in depth, CI security scanning, modular Terraform |
@@ -115,7 +115,7 @@ make down
 Destroying the cluster first would orphan the ALB and its security groups and block VPC deletion.
 
 **Approximate cost while running (us-east-1):** about $6–8/day. EKS control plane $0.10/h,
-2× t4g.medium, NAT gateway, ALB, db.t4g.micro, WAF, KMS keys, Container Insights metrics.
+2× t3.medium, NAT gateway, ALB, db.t3.micro, WAF, KMS keys, Container Insights metrics.
 
 ---
 
@@ -191,6 +191,7 @@ works in **GovCloud** (`aws-us-gov`).
 | Exception | Why | Production answer |
 |---|---|---|
 | Public EKS endpoint (CIDR-restricted) | Lets Terraform and kubectl run from a workstation without a VPN or bastion | Private endpoint only; access via SSM bastion, VPN or a CI runner inside the VPC |
+| x86 (`t3.medium`, `db.t3.micro`) instead of Graviton | The provided account's SCP (`DenyExpensiveEC2InstanceTypes`) denies all Graviton types and anything above `t3.medium` | `t4g.medium` + `node_ami_type = "AL2023_ARM_64_STANDARD"` + `IMAGE_PLATFORM=linux/arm64`, `db.t4g.micro`: ~20% cheaper, no code change beyond variables |
 | Single NAT gateway | About $33/month per extra NAT | `single_nat_gateway = false` (one per AZ) |
 | RDS single-AZ, no deletion protection, no final snapshot | Cost and one-command teardown | `db_multi_az = true`, `db_deletion_protection = true` |
 | App connects as the RDS master user | Keeps the exercise to one secret | Migration job creates a least-privilege app role; app gets a separate rotated secret, or IAM DB auth |

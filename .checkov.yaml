@@ -15,7 +15,7 @@ skip-check:
   - CKV_AWS_157   # RDS Multi-AZ: off for cost (var.db_multi_az)
   - CKV_AWS_293   # RDS deletion protection: off so the env can be torn down (var.db_deletion_protection)
   - CKV_AWS_338   # Log retention >= 1 year: 14 days for a demo (var.log_retention_days)
-  - CKV_AWS_353   # Performance Insights: not supported on db.t4g.micro
+  - CKV_AWS_353   # Performance Insights: off for the micro demo instance (cost)
   # --- Design decisions -------------------------------------------------------
   - CKV_AWS_161   # RDS IAM auth: credentials are RDS-managed + rotated in Secrets Manager (required by the brief)
   - CKV_AWS_394   # AZ data source: slice() to a fixed az_count, so new AZs do not change the result

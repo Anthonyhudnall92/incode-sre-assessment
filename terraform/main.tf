@@ -56,6 +56,7 @@ module "eks_cluster" {
   vpc_id                      = module.network.vpc_id
   private_subnet_ids          = module.network.private_subnet_ids
   admin_cidrs                 = var.admin_cidrs
+  node_ami_type               = var.node_ami_type
   node_instance_types         = var.node_instance_types
   node_min_size               = var.node_min_size
   node_desired_size           = var.node_desired_size

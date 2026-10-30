@@ -67,10 +67,16 @@ variable "kubernetes_version" {
   default     = "1.34"
 }
 
+variable "node_ami_type" {
+  description = "EKS AMI type for the node group. Must match the architecture of node_instance_types and of the image built by scripts/deploy.sh (IMAGE_PLATFORM)."
+  type        = string
+  default     = "AL2023_x86_64_STANDARD"
+}
+
 variable "node_instance_types" {
-  description = "Instance types for the managed node group. Graviton (arm64) is the cheapest option; the app image is built for linux/arm64."
+  description = "Instance types for the managed node group. x86 because the hosting account's SCP denies Graviton (t4g/m7g) and anything above t3.medium; on an unrestricted account t4g.medium + AL2023_ARM_64_STANDARD is ~20% cheaper."
   type        = list(string)
-  default     = ["t4g.medium"]
+  default     = ["t3.medium"]
 }
 
 variable "node_min_size" {
@@ -115,8 +121,9 @@ variable "db_engine_version" {
 }
 
 variable "db_instance_class" {
-  type    = string
-  default = "db.t4g.micro"
+  description = "RDS instance class. db.t3.micro (x86) because the hosting account's SCP denies Graviton."
+  type        = string
+  default     = "db.t3.micro"
 }
 
 variable "db_multi_az" {

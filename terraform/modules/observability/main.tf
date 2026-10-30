@@ -199,7 +199,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_storage" {
 
 resource "aws_cloudwatch_metric_alarm" "rds_connections" {
   alarm_name          = "${var.name}-rds-connections-high"
-  alarm_description   = "RDS connections approaching the db.t4g.micro limit (~80)."
+  alarm_description   = "RDS connections approaching the db.t3.micro limit (~80)."
   namespace           = "AWS/RDS"
   metric_name         = "DatabaseConnections"
   statistic           = "Maximum"

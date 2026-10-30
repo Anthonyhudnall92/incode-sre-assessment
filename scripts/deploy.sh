@@ -44,10 +44,11 @@ aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER" >/dev/null
 # --- Image ------------------------------------------------------------------------
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   TAG="${TAG:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)-$(date -u +%Y%m%d%H%M%S)}"
-  echo "==> Building $REPO_URL:$TAG (linux/arm64 for Graviton nodes)"
+  PLATFORM="${IMAGE_PLATFORM:-linux/amd64}" # must match node_ami_type
+  echo "==> Building $REPO_URL:$TAG ($PLATFORM)"
   aws ecr get-login-password --region "$AWS_REGION" \
     | docker login --username AWS --password-stdin "$REGISTRY" >/dev/null
-  docker buildx build --platform linux/arm64 --provenance=false \
+  docker buildx build --platform "$PLATFORM" --provenance=false \
     -t "$REPO_URL:$TAG" --push "$ROOT/app"
 
   echo "==> Waiting for ECR scan"

@@ -22,6 +22,10 @@ variable "admin_cidrs" {
   type = list(string)
 }
 
+variable "node_ami_type" {
+  type = string
+}
+
 variable "node_instance_types" {
   type = list(string)
 }
