@@ -46,7 +46,7 @@ resource "aws_security_group" "db" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "db_from_clients" {
-  for_each = toset(var.allowed_client_sg_ids)
+  for_each = var.allowed_client_sg_ids
 
   security_group_id            = aws_security_group.db.id
   referenced_security_group_id = each.value
