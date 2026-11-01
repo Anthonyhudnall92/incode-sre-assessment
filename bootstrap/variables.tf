@@ -15,3 +15,9 @@ variable "force_destroy" {
   type        = bool
   default     = true
 }
+
+variable "dns_zone_name" {
+  description = "Optional subdomain to host in Route 53 (e.g. incode.example.com). Delegate it by adding the name_servers output as NS records at the parent domain's DNS provider."
+  type        = string
+  default     = null
+}

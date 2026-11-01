@@ -181,3 +181,25 @@ resource "aws_s3_bucket_policy" "state" {
 
   depends_on = [aws_s3_bucket_public_access_block.state]
 }
+
+# -----------------------------------------------------------------------------
+# DNS: delegated subdomain for the app
+#
+# Lives here, not in the main stack, so `make down` never destroys it. A new
+# zone gets new name servers, which would mean redoing the NS delegation at
+# the parent domain's DNS provider. The parent domain stays where it is; only
+# this subdomain is delegated, so the account can only issue certificates for
+# and change records under it.
+# -----------------------------------------------------------------------------
+
+resource "aws_route53_zone" "app" {
+  # checkov:skip=CKV2_AWS_38:DNSSEC would also need a DS record at the parent; parent zone is unsigned (README exception)
+  # checkov:skip=CKV2_AWS_39:Query logging out of scope for a demo zone (README exception)
+  count = var.dns_zone_name == null ? 0 : 1
+
+  name    = var.dns_zone_name
+  comment = "Delegated from the parent domain; long-lived, outside the main stack"
+
+  # Refuse to delete while the main stack's records still exist.
+  force_destroy = false
+}

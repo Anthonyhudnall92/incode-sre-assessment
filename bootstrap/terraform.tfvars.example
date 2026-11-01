@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+
+# Optional: subdomain to delegate to Route 53 for the app's HTTPS certificate.
+# dns_zone_name = "incode.example.com"

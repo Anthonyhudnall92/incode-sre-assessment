@@ -198,6 +198,8 @@ works in **GovCloud** (`aws-us-gov`).
 | Node SG shared by all pods | Pods inherit the node SG, so any pod could reach RDS at the SG layer (NetworkPolicy still restricts it) | Security Groups for Pods, so only app pods carry the RDS-allowed SG |
 | Egress 443 to the internet (via NAT) for AWS APIs | Avoids ~$7/month per AZ per interface endpoint | VPC interface endpoints (STS, Secrets Manager, ECR, Logs) and drop the 0.0.0.0/0 rule |
 | HTTP only if no domain is configured | ACM requires a domain | Always set `domain_name` |
+| App subdomain zone without DNSSEC | The parent domain (hosted elsewhere) is unsigned, so a signed child would not be validated | Sign parent and child; publish the child's DS record at the parent |
+| No Route 53 query logging | Demo scope | Query logs to an encrypted CloudWatch log group |
 | 14-day log retention | Demo | ≥ 1 year, or export to S3/Glacier |
 | LB Controller and CloudWatch agent run in `kube-system`/`amazon-cloudwatch` with broader privileges | Platform components need node/AWS access | Run via EKS managed add-ons where available; restrict with admission policy (Kyverno/Gatekeeper) |
 | Registry modules pinned by version, not commit hash | Readability | Pin by hash or vendor the modules; Dependabot/Renovate for updates |

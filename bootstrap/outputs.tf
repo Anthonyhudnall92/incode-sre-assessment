@@ -17,3 +17,13 @@ output "backend_hcl" {
     use_lockfile = true
   EOT
 }
+
+output "dns_zone_id" {
+  description = "Set as route53_zone_id in terraform/terraform.tfvars."
+  value       = one(aws_route53_zone.app[*].zone_id)
+}
+
+output "dns_name_servers" {
+  description = "Add each as an NS record for the subdomain at the parent domain's DNS provider."
+  value       = one(aws_route53_zone.app[*].name_servers)
+}
