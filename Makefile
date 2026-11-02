@@ -56,7 +56,8 @@ argocd: kubeconfig ## Open the Argo CD UI on https://localhost:8080 (prints the 
 	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo "  <- admin password"
 	kubectl -n argocd port-forward svc/argocd-server 8080:443
 
-up: init plan apply addons ## Everything, from zero to a running app (Argo CD deploys it)
+up: init plan apply ## Build the main stack; then `make tunnel` (leave running) and `make addons`
+	@echo "Next: make tunnel (in another terminal), then make addons. Argo CD deploys the app."
 
 down: ## Tear everything down (ALB first, then Terraform)
 	scripts/destroy.sh

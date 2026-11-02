@@ -5,6 +5,14 @@ All alarms publish to the `<name>-alerts` SNS topic. Start from the CloudWatch d
 
 Useful commands:
 
+The EKS API is private. Open the tunnel first and leave it running:
+
+```bash
+make tunnel                             # SSM port forward: 127.0.0.1:8443 -> private API
+```
+
+Then, in another terminal:
+
 ```bash
 make kubeconfig                         # writes .kube/config; never use another context
 export KUBECONFIG=$PWD/.kube/config
@@ -14,6 +22,16 @@ kubectl -n uptime logs deploy/uptime --since=15m
 kubectl -n uptime get events --sort-by=.lastTimestamp
 ```
 
+### Reaching the cluster
+
+- **`make tunnel` fails with `TargetNotConnected`:** the jump host's SSM agent is not online.
+  `aws ssm describe-instance-information` should list it as `Online`; if the instance is gone or
+  broken, replace it: `terraform -chdir=terraform apply -replace=module.jump_host.aws_instance.this`
+  through a PR, or locally in an emergency.
+- **Break-glass (SSM itself is down):** set `eks_public_access = true` (in `terraform.tfvars` and
+  the `TF_VARS` secret), apply, then use `DIRECT=1 make kubeconfig` and `DIRECT=1 make addons`.
+  The public endpoint accepts `admin_cidrs` only. Turn it off again the same way.
+
 ### Argo CD
 
 Argo CD deploys the app and the cluster add-ons from `main`. Changes made with `kubectl` are
@@ -21,7 +39,7 @@ reverted within minutes (self-heal), so fix things in git.
 
 ```bash
 kubectl -n argocd get applications      # SYNC STATUS should be Synced, HEALTH Healthy
-make argocd                             # UI on https://localhost:8443, user admin
+make argocd                             # UI on https://localhost:8080, user admin
 ```
 
 - **OutOfSync that will not clear:** open the app in the UI and look at the diff. A sync error
