@@ -124,6 +124,8 @@ jobs:
           # Only the outcome: resource IDs and values stay out of the public log.
           grep -E '^Apply complete!' "$RUNNER_TEMP/apply.log" || true
           if [[ $status -ne 0 ]]; then
-            grep -A12 -E '^(│ )?Error' "$RUNNER_TEMP/apply.log" || tail -20 "$RUNNER_TEMP/apply.log"
+            # Without AWS's encoded authorization messages (see terraform-plan.sh).
+            { grep -A12 -E '^(│ )?Error' "$RUNNER_TEMP/apply.log" || tail -20 "$RUNNER_TEMP/apply.log"; } |
+              sed -E 's/(Encoded authorization failure message:) [A-Za-z0-9_-]+/\1 (hidden; rerun locally to decode)/'
             exit $status
           fi
