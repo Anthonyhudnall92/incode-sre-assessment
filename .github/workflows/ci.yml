@@ -49,6 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # gitleaks scans the PR's commit range, which needs full history.
+          fetch-depth: 0
 
       # Scan the manifests exactly as they will be applied (templates rendered
       # with placeholder values), not the raw ${VAR} templates.
