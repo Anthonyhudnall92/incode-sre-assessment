@@ -22,6 +22,9 @@ resources:
 
 logLevel: INFO
 
+# Most sites the shared board will watch at once.
+maxMonitors: 30
+
 # --- Set by addons/ ---------------------------------------------------------------
 region: us-east-1
 roleArn: ""

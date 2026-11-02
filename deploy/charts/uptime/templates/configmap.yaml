@@ -12,3 +12,8 @@ data:
   DB_SECRET_ARN: {{ required "db.secretArn is required" .Values.db.secretArn | quote }}
   AWS_REGION: {{ .Values.region | quote }}
   LOG_LEVEL: {{ .Values.logLevel | quote }}
+  MAX_MONITORS: {{ .Values.maxMonitors | quote }}
+  {{- with .Values.ingress.host }}
+  # Named in the checker's User-Agent so site owners can see what it is.
+  PUBLIC_URL: {{ printf "https://%s" . | quote }}
+  {{- end }}

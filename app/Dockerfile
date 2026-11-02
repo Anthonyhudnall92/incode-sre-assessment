@@ -39,7 +39,8 @@ RUN groupadd --gid 10001 app \
 COPY --from=build /install /usr/local
 # Code and certs are owned by root and read-only to the app user.
 COPY --from=build --chmod=0444 /build/certs/rds-global-bundle.pem /app/certs/rds-global-bundle.pem
-COPY --chmod=0444 app.py /app/app.py
+COPY --chmod=0444 app.py checker.py /app/
+COPY --chmod=0444 static/ /app/static/
 
 WORKDIR /app
 USER 10001:10001

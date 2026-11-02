@@ -4,7 +4,8 @@
 # 2. Allow in:  TCP 8080 from inside the VPC (ALB nodes in public subnets
 #               and kubelet health probes on the node IPs).
 # 3. Allow out: DNS to CoreDNS, PostgreSQL to the database subnets only,
-#               HTTPS for AWS APIs (STS, Secrets Manager), except IMDS.
+#               HTTP and HTTPS outside the VPC (AWS APIs and the sites the
+#               board checks), never to the VPC or IMDS.
 {{- $vpc := required "vpcCidr is required" .Values.vpcCidr }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -55,7 +56,8 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    # AWS APIs over TLS (via NAT). Tighten with VPC interface endpoints - see README.
+    # AWS APIs and the monitored sites (via NAT). The checker refuses private
+    # addresses itself; this is the second layer.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -65,3 +67,5 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 80

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uptime board</title>
+  <meta name="description" content="A shared board that checks public websites every few minutes and shows whether they are up.">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <p class="brand"><span class="brand-mark" aria-hidden="true"></span>Uptime board</p>
+      <h1 id="headline" class="headline" aria-live="polite">Checking the board…</h1>
+      <p class="lede" id="lede">Sites on this board are checked from AWS in us-east-1. Add one and watch its signal fill in.</p>
+    </header>
+
+    <section class="add" aria-labelledby="add-title">
+      <h2 id="add-title" class="section-title">Watch a site</h2>
+      <form id="add-form" class="add-form" novalidate>
+        <label class="field field-url">
+          <span>Address</span>
+          <input id="url" name="url" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com" required maxlength="2048">
+        </label>
+        <label class="field field-name">
+          <span>Name <em>(optional)</em></span>
+          <input id="name" name="name" type="text" maxlength="60" placeholder="My shop">
+        </label>
+        <label class="field field-method">
+          <span>Request</span>
+          <select id="method" name="method">
+            <option value="GET">GET</option>
+            <option value="HEAD">HEAD</option>
+          </select>
+        </label>
+        <label class="field field-interval">
+          <span>Every</span>
+          <select id="interval" name="interval">
+            <option value="60">minute</option>
+            <option value="300" selected>5 minutes</option>
+            <option value="900">15 minutes</option>
+            <option value="3600">hour</option>
+          </select>
+        </label>
+        <button class="primary" type="submit" id="add-button">Start watching</button>
+      </form>
+      <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section aria-labelledby="board-title">
+      <div class="board-head">
+        <h2 id="board-title" class="section-title">On the board</h2>
+        <p class="board-meta" id="board-meta"></p>
+      </div>
+      <ol id="board" class="board"></ol>
+      <p id="board-empty" class="empty" hidden>Nothing on the board yet. Add a site above to start the first check.</p>
+      <p id="board-error" class="board-error" role="alert" hidden></p>
+    </section>
+
+    <footer class="footnote">
+      <p>Each bar is one check: taller means slower, red means it failed. Checks use GET or HEAD only, follow up to three redirects, and never reach private or internal addresses. Sites you add stay for 7 days, and only you can remove them from this browser.</p>
+    </footer>
+  </main>
+</body>
+</html>
