@@ -34,7 +34,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN groupadd --gid 10001 app \
  && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app \
  && (pip uninstall -y pip setuptools wheel || true) \
- && install -d -m 0755 /app /app/certs
+ && install -d -m 0755 /app /app/certs /app/static
 
 COPY --from=build /install /usr/local
 # Code and certs are owned by root and read-only to the app user.
