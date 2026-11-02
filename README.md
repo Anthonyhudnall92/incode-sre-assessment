@@ -25,8 +25,10 @@ flowchart LR
     alb -->|8080, target-type ip| pods
     subgraph private["Private subnets (/20)"]
       subgraph eks["EKS managed node group (IMDSv2, encrypted EBS)"]
-        pods[demo-app pods<br/>non-root, read-only FS<br/>NetworkPolicy default-deny]
+        pods[uptime pods<br/>non-root, read-only FS<br/>NetworkPolicy default-deny]
+        argo[Argo CD<br/>no public UI]
         lbc[AWS LB Controller]
+        edns[ExternalDNS]
         cw[CloudWatch agent + Fluent Bit]
       end
     end
@@ -42,6 +44,11 @@ flowchart LR
   cw --> cwl[CloudWatch Logs / Metrics]
   cwl --> alarms[Alarms] --> sns[SNS alerts]
   admin((Admin /32)) -->|kubectl / terraform| api[EKS API<br/>public, CIDR-restricted]
+  gh[GitHub main] -->|pulls chart + digest| argo
+  argo -->|syncs| pods
+  argo -->|syncs| lbc
+  argo -->|syncs| edns
+  edns -->|alias record| r53[Route 53<br/>app zone only]
 ```
 
 **Request path:** client → WAF → ALB (TLS terminates here) → pod IP on 8080 → app reads its DB
@@ -52,21 +59,22 @@ credentials from Secrets Manager (IRSA) → PostgreSQL over TLS with full certif
 ## Repository layout
 
 ```
-bootstrap/                 One-time: encrypted, versioned S3 state bucket (+ KMS) with native locking
+bootstrap/                 One-time: state bucket (+ KMS), DNS zone, GitHub OIDC roles, workload boundary
 terraform/
   main.tf                  Wires the modules together
   modules/
     log-storage/           KMS key + pre-created log groups (retention + encryption)
     network/               VPC, 3 subnet tiers, single NAT, flow logs, locked default SG
-    eks-cluster/           EKS, node group, managed add-ons, IRSA roles, LB Controller
+    eks-cluster/           EKS, node group, managed add-ons, IRSA roles
     database/              RDS, parameter group (force_ssl), SG, KMS, enhanced monitoring
-    app-platform/          ECR, app IRSA role, WAF, ACM certificate
+    app-platform/          ECR, app and ExternalDNS IRSA roles, WAF, ACM certificate
     observability/         SNS, log metric filters, alarms, dashboard
+addons/                    Argo CD, and the Applications it keeps in sync (needs EKS API access)
+deploy/charts/uptime/      The app's Helm chart; values.yaml pins the image digest
 app/                       Python API, Dockerfile, unit tests
-k8s/                       Manifest templates (rendered by scripts/render-manifests.sh)
-scripts/                   deploy.sh, destroy.sh, render-manifests.sh
+scripts/                   release.sh, destroy.sh, ci/ (plan/apply helpers)
 docs/runbook.md            What each alarm means and what to do about it
-.github/workflows/ci.yml   fmt, validate, tflint, checkov, kubeconform, gitleaks, tests, hadolint, trivy
+.github/workflows/         ci (lint, scan, test), terraform-plan (PRs), terraform-apply (main, approval-gated)
 ```
 
 ---
@@ -75,8 +83,8 @@ docs/runbook.md            What each alarm means and what to do about it
 
 ### Prerequisites
 
-Terraform ≥ 1.10, AWS CLI v2, kubectl, Docker with buildx, `jq`, `envsubst` (`brew install gettext`),
-and AWS credentials for the target account.
+Terraform ≥ 1.10, AWS CLI v2, kubectl, Docker with buildx, `jq`, and AWS credentials for the
+target account.
 
 ### 1. Configure
 
@@ -95,14 +103,19 @@ make bootstrap        # creates the bucket + key, writes terraform/backend.hcl
 ### 3. Build everything
 
 ```bash
-make up               # init → plan → apply → build/scan/push image → deploy
+make up               # init → plan → apply → addons (Argo CD + its apps)
+make release          # build, scan and push the image; pins its digest in the chart
+git commit -am "..." && open a PR, merge it   # Argo CD deploys it from main
 ```
 
-`make up` takes roughly 20 minutes (EKS control plane ≈ 10, RDS ≈ 5). The script prints the app URL.
+`make up` takes roughly 20 minutes (EKS control plane ≈ 10, RDS ≈ 5). After that the main stack
+changes through pull requests (see GitOps / CI) and the app through Argo CD. With a domain set,
+ExternalDNS points it at the ALB within a minute or two of the Ingress getting one.
 
 ```bash
-curl https://<domain>/          # {"message": "...", "pod": "demo-app-...", "visits": 3}
-make status                     # pods, ingress, network policies, dashboard link
+curl https://<domain>/          # {"message": "...", "pod": "uptime-...", "visits": 3}
+make status                     # Argo CD apps, pods, ingress, network policies, dashboard link
+make argocd                     # Argo CD UI on https://localhost:8443 (port-forward only)
 ```
 
 ### 4. Tear down when not in use
@@ -111,7 +124,8 @@ make status                     # pods, ingress, network policies, dashboard lin
 make down
 ```
 
-`destroy.sh` deletes the app namespace first and waits for the controller to remove the ALB.
+`destroy.sh` deletes the app's Argo CD Application first and waits for the controller to remove
+the ALB.
 Destroying the cluster first would orphan the ALB and its security groups and block VPC deletion.
 
 **Approximate cost while running (us-east-1):** about $6–8/day. EKS control plane $0.10/h,
@@ -168,15 +182,27 @@ Destroying the cluster first would orphan the ALB and its security groups and bl
 - **WAF:** AWS Common and Known-Bad-Inputs rule groups plus a per-IP rate limit, with logging
   (Authorization and Cookie headers redacted).
 - **IMDSv2 with hop limit 1:** pods cannot reach node credentials.
-- **Image scanning:** ECR scan-on-push, and `deploy.sh` refuses to deploy an image with CRITICAL
+- **Image scanning:** ECR scan-on-push, and `release.sh` refuses to pin an image with CRITICAL
   findings. Trivy in CI.
 - **Audit logging:** EKS audit log and VPC flow logs.
 
 ### GitOps / CI
 
-On every PR: `terraform fmt`/`validate`, tflint, checkov (Terraform, rendered manifests, Dockerfile,
+On every PR: `terraform fmt`/`validate`, tflint, checkov (Terraform, the rendered chart, Dockerfile,
 workflows), kubeconform, gitleaks, unit tests, hadolint, Trivy image scan. Every checkov skip is
 listed with its reason in `.checkov.yaml`.
+
+**Infrastructure:** GitHub Actions assumes AWS roles through OIDC (no stored keys). A PR that
+touches `terraform/` gets a plan summary comment from a read-only role. Merging to `main` plans
+again, waits for approval in the `production` environment, and applies only if the change list
+matches the one that was reviewed. The public logs show resource addresses, never values.
+
+**Cluster:** Argo CD keeps the load balancer controller, ExternalDNS and the app in sync with
+`main`, reverting drift and pruning what is no longer declared. A release is a PR that changes the
+image digest in `deploy/charts/uptime/values.yaml`. Values that name the account or environment
+(role ARNs, database host, domain) are not in git: `addons/` reads them from the main stack's
+outputs and gives them to Argo CD, because this repository is public. Argo CD's UI has no
+Ingress; reach it with `make argocd`.
 
 ### Reusability
 
