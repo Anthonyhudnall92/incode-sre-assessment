@@ -6,6 +6,9 @@
 # orphaned and block VPC deletion. So: delete the app's Argo CD Application
 # (its finalizer deletes the Ingress), wait for the controller to remove the
 # ALB, destroy the add-ons, then the main stack.
+#
+# The EKS API is private: run `make tunnel` in another terminal first, or set
+# DIRECT=1 if the public endpoint is on (eks_public_access).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,7 +25,7 @@ NAMESPACE="$(out app_namespace)"
 APP="$(out app_name)"
 
 if [[ -n "$CLUSTER" ]] && aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
-  aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" --kubeconfig "$KUBECONFIG" >/dev/null
+  make -C "$ROOT" --no-print-directory kubeconfig >/dev/null
   # Deleting the namespace directly would not stick: Argo CD would recreate it.
   if kubectl -n argocd get application "$APP" >/dev/null 2>&1; then
     echo "==> Deleting Argo CD application $APP (removes the Ingress and its ALB)"
@@ -49,7 +52,9 @@ if [[ -n "$CLUSTER" ]] && aws eks describe-cluster --region "$REGION" --name "$C
   echo "==> terraform destroy (add-ons)"
   terraform -chdir="$ROOT/addons" init -input=false -backend-config="$TF_DIR/backend.hcl" \
     -backend-config=key=sre-demo/addons.tfstate >/dev/null
-  terraform -chdir="$ROOT/addons" destroy "$@"
+  API_ARGS=()
+  [[ -z "${DIRECT:-}" ]] && API_ARGS=(-var "api_server_url=https://127.0.0.1:${TUNNEL_PORT:-8443}")
+  terraform -chdir="$ROOT/addons" destroy ${API_ARGS[@]+"${API_ARGS[@]}"} "$@"
 fi
 
 echo "==> terraform destroy (main stack)"

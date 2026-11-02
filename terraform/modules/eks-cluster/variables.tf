@@ -66,3 +66,14 @@ variable "container_log_group_arns" {
   description = "Container Insights log groups that must exist before the CloudWatch add-on starts."
   type        = list(string)
 }
+
+variable "endpoint_public_access" {
+  description = "Open the public API endpoint (to admin_cidrs only). Break-glass: normally the API is private."
+  type        = bool
+}
+
+variable "api_client_security_groups" {
+  description = "Security groups allowed to reach the private API endpoint on 443, by name."
+  type        = map(string)
+  default     = {}
+}

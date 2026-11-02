@@ -3,7 +3,7 @@
 #
 # Kept apart from the main stack (terraform/) so that the main stack only talks
 # to AWS APIs and GitHub Actions can plan and apply it. This layer reaches the
-# Kubernetes API, which is restricted to admin_cidrs, so it runs from there.
+# Kubernetes API, which is private, so it runs through `make tunnel`.
 #
 # Terraform installs Argo CD and declares its Applications. From then on Argo
 # CD owns everything they contain. Values that name the account or the
@@ -56,9 +56,12 @@ data "aws_eks_cluster" "this" {
 }
 
 # Short-lived token from the AWS CLI; no kubeconfig or static credentials.
+# The API is private: through the tunnel, connect to 127.0.0.1 but verify the
+# certificate against the real endpoint name.
 provider "helm" {
   kubernetes {
-    host                   = data.aws_eks_cluster.this.endpoint
+    host                   = coalesce(var.api_server_url, data.aws_eks_cluster.this.endpoint)
+    tls_server_name        = var.api_server_url == null ? null : trimprefix(data.aws_eks_cluster.this.endpoint, "https://")
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.this.certificate_authority[0].data)
 
     exec {
