@@ -1,7 +1,9 @@
 # Secure EKS + RDS Reference Stack
 
-Terraform that provisions a VPC, an EKS cluster, a PostgreSQL RDS instance and a small
-demo API that uses it, built **secure by default** and instrumented for operations.
+Terraform that provisions a VPC, an EKS cluster and a PostgreSQL RDS instance, and runs an
+**uptime monitor** on them: a shared status board where anyone can add a public site, and the
+cluster checks it every 1 to 60 minutes. Built **secure by default** and instrumented for
+operations.
 
 | | |
 |---|---|
@@ -10,6 +12,7 @@ demo API that uses it, built **secure by default** and instrumented for operatio
 | **Data** | RDS PostgreSQL 17, `db.t3.micro`, private, TLS-only |
 | **Edge** | ALB via AWS Load Balancer Controller, ACM TLS, AWS WAF |
 | **Observability** | Container Insights, Fluent Bit → CloudWatch Logs, log-derived app metrics, alarms → SNS, dashboard |
+| **App** | Python status board + background checker; SSRF-safe checks (public addresses only, pinned IP, validated redirects) |
 | **Going further** | Observability (primary), defense in depth, CI security scanning, modular Terraform |
 
 ---
@@ -116,7 +119,7 @@ changes through pull requests (see GitOps / CI) and the app through Argo CD. Wit
 ExternalDNS points it at the ALB within a minute or two of the Ingress getting one.
 
 ```bash
-curl https://<domain>/          # {"message": "...", "pod": "uptime-...", "visits": 3}
+open https://<domain>/          # the status board: add a site, watch its signal strip fill in
 make status                     # Argo CD apps, pods, ingress, network policies, dashboard link
 make argocd                     # Argo CD UI on https://localhost:8080 (port-forward only)
 ```
