@@ -355,6 +355,8 @@ data "aws_iam_policy_document" "github_apply_core" {
       "ec2:AssociateIamInstanceProfile",
       "ec2:ReplaceIamInstanceProfileAssociation",
       "ec2:DisassociateIamInstanceProfile",
+      "ec2:MonitorInstances",
+      "ec2:UnmonitorInstances",
     ]
     resources = ["${local.arn_prefix}:ec2:${var.region}:${local.account_id}:instance/*"]
 
