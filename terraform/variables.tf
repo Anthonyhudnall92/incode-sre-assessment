@@ -61,6 +61,16 @@ variable "admin_cidrs" {
   }
 }
 
+variable "cluster_admins" {
+  description = "IAM principals that get cluster-admin and administer the cluster's KMS key, keyed by a short name, e.g. { demo-account = \"arn:aws:iam::<account>:user/demo_account\" }. Explicit so the result does not depend on who runs Terraform (a laptop or CI)."
+  type        = map(string)
+
+  validation {
+    condition     = length(var.cluster_admins) > 0 && alltrue([for arn in values(var.cluster_admins) : can(regex("^arn:aws:iam::[0-9]{12}:(user|role)/", arn))])
+    error_message = "cluster_admins must name at least one IAM user or role ARN."
+  }
+}
+
 variable "kubernetes_version" {
   description = "EKS Kubernetes version. Pick one in standard support (aws eks describe-cluster-versions) to avoid extended-support charges."
   type        = string

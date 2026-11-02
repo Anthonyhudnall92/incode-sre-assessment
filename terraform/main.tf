@@ -50,6 +50,8 @@ module "network" {
 module "eks_cluster" {
   source = "./modules/eks-cluster"
 
+  cluster_admins = var.cluster_admins
+
   name                        = local.name
   kubernetes_version          = var.kubernetes_version
   region                      = var.region

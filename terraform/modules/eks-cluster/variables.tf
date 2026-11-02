@@ -18,6 +18,11 @@ variable "private_subnet_ids" {
   type = list(string)
 }
 
+variable "cluster_admins" {
+  description = "IAM principal ARNs keyed by a short name; each gets cluster-admin and KMS key administration."
+  type        = map(string)
+}
+
 variable "admin_cidrs" {
   type = list(string)
 }

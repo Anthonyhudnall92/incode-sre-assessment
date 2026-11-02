@@ -22,10 +22,21 @@ module "eks" {
   cluster_endpoint_public_access       = true
   cluster_endpoint_public_access_cidrs = var.admin_cidrs
 
-  # Access entries (no aws-auth ConfigMap). The identity running Terraform
-  # gets cluster-admin; everything else must be granted explicitly.
+  # Access entries (no aws-auth ConfigMap). Admins are listed explicitly rather
+  # than "whoever ran Terraform", so a CI apply cannot silently swap them.
   authentication_mode                      = "API"
-  enable_cluster_creator_admin_permissions = true
+  enable_cluster_creator_admin_permissions = false
+  access_entries = {
+    for name, arn in var.cluster_admins : name => {
+      principal_arn = arn
+      policy_associations = {
+        cluster-admin = {
+          policy_arn   = "arn:${local.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+  }
 
   enable_irsa = true
 
@@ -33,8 +44,11 @@ module "eks" {
   iam_role_use_name_prefix = false
 
   # Envelope-encrypt Kubernetes Secrets with a dedicated, rotating KMS key.
-  create_kms_key                            = true
-  enable_kms_key_rotation                   = true
+  create_kms_key          = true
+  enable_kms_key_rotation = true
+  # Explicit, for the same reason as access_entries. The default key policy
+  # still delegates to IAM, so a CI role with KMS permissions can manage it.
+  kms_key_administrators                    = values(var.cluster_admins)
   kms_key_deletion_window_in_days           = 7
   cluster_encryption_policy_name            = "${var.name}-cluster-encryption"
   cluster_encryption_policy_use_name_prefix = false
