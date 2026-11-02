@@ -22,8 +22,10 @@ status=$?
 set -e
 if [[ $status -eq 1 ]]; then
   # Only the error blocks; values in them are masked by terraform-config.sh.
+  # AWS's encoded authorization messages are dropped: they describe the
+  # policy that denied the call and belong in the account, not a public log.
   echo "terraform plan failed:" >&2
-  grep -A12 -E '^(│ )?Error' "$TMP/plan.log" >&2 || tail -20 "$TMP/plan.log" >&2
+  { grep -A12 -E '^(│ )?Error' "$TMP/plan.log" || tail -20 "$TMP/plan.log"; } | sed -E 's/(Encoded authorization failure message:) [A-Za-z0-9_-]+/\1 (hidden; rerun locally to decode)/' >&2
   exit 1
 fi
 
