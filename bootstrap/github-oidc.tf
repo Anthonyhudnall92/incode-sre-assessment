@@ -297,6 +297,9 @@ data "aws_iam_policy_document" "github_apply_core" {
       "ec2:ReplaceNetworkAclAssociation",
       "ec2:*FlowLogs",
       "ec2:*LaunchTemplate",
+      # Singular and plural are different actions: CreateLaunchTemplateVersion
+      # (node group updates) vs Delete/DescribeLaunchTemplateVersions.
+      "ec2:CreateLaunchTemplateVersion",
       "ec2:*LaunchTemplateVersions",
       "ec2:DeleteNetworkInterface",
       "ec2:EnableEbsEncryptionByDefault",
@@ -329,6 +332,39 @@ data "aws_iam_policy_document" "github_apply_core" {
       test     = "StringEquals"
       variable = "ec2:InstanceType"
       values   = ["t3.micro"]
+    }
+  }
+
+  # Updating a node group to a new launch template makes EKS dry-run
+  # RunInstances as the caller. Allowed only for the node instance types, and
+  # only through a launch template that carries this stack's tag.
+  statement {
+    sid       = "LaunchNodesFromStackTemplates"
+    actions   = ["ec2:RunInstances"]
+    resources = ["${local.arn_prefix}:ec2:${var.region}:${local.account_id}:instance/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:InstanceType"
+      values   = var.node_instance_types
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "ec2:LaunchTemplate"
+      values   = ["${local.arn_prefix}:ec2:${var.region}:${local.account_id}:launch-template/*"]
+    }
+  }
+
+  statement {
+    sid       = "StackLaunchTemplates"
+    actions   = ["ec2:RunInstances"]
+    resources = ["${local.arn_prefix}:ec2:${var.region}:${local.account_id}:launch-template/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
     }
   }
 
