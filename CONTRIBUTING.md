@@ -60,3 +60,7 @@ Examples: `infra/github-oidc-roles`, `fix/app-dir-permissions`.
 - Use fixed names where the resource allows them. `name_prefix` (which appends
   a 26-digit timestamp) only where a name must change on replacement, such as
   security groups and parameter groups with `create_before_destroy`.
+- Known exception: the IAM policies the `iam-role-for-service-accounts-eks`
+  module ships for the VPC CNI and the load balancer controller are always
+  name-prefixed. We keep them rather than copying the policies by hand,
+  because the module keeps them up to date.

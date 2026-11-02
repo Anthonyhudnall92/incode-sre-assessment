@@ -38,6 +38,10 @@ module "vpc" {
   enable_flow_log                                 = true
   create_flow_log_cloudwatch_log_group            = true
   create_flow_log_cloudwatch_iam_role             = true
+  vpc_flow_log_iam_role_name                      = "${var.name}-vpc-flow-logs"
+  vpc_flow_log_iam_role_use_name_prefix           = false
+  vpc_flow_log_iam_policy_name                    = "${var.name}-vpc-flow-logs"
+  vpc_flow_log_iam_policy_use_name_prefix         = false
   flow_log_max_aggregation_interval               = 60
   flow_log_cloudwatch_log_group_retention_in_days = var.log_retention_days
   flow_log_cloudwatch_log_group_kms_key_id        = var.logs_kms_key_arn

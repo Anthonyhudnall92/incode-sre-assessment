@@ -33,9 +33,11 @@ module "eks" {
   iam_role_use_name_prefix = false
 
   # Envelope-encrypt Kubernetes Secrets with a dedicated, rotating KMS key.
-  create_kms_key                  = true
-  enable_kms_key_rotation         = true
-  kms_key_deletion_window_in_days = 7
+  create_kms_key                            = true
+  enable_kms_key_rotation                   = true
+  kms_key_deletion_window_in_days           = 7
+  cluster_encryption_policy_name            = "${var.name}-cluster-encryption"
+  cluster_encryption_policy_use_name_prefix = false
   cluster_encryption_config = {
     resources = ["secrets"]
   }
