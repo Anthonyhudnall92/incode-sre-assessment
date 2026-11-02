@@ -75,27 +75,52 @@
     return node;
   }
 
+  // 7-day uptime against the SLO, and how much error budget is left.
+  function slo(m, state) {
+    const s = m.slo;
+    const node = el("div", { class: "slo" });
+    if (!s) {
+      node.append(el("p", { class: "figure", text: "–" }), el("p", { class: "slo-note", text: "no checks yet" }));
+      return node;
+    }
+    const left = s.budget_left;
+    const level = left <= 0 ? "spent" : left < 25 ? "low" : "ok";
+    const uptime = s.uptime >= 99.995 ? "100" : s.uptime.toFixed(s.uptime >= 99 ? 2 : 1);
+    const bar = el("span", { class: `budget is-${level}`, role: "img", "aria-label": `Error budget ${left}% left` });
+    const fill = el("span", { class: "budget-fill" });
+    fill.style.setProperty("--left", `${Math.max(0, left)}%`);
+    bar.append(fill);
+    bar.title = `${s.failed} failed of ${s.checks} checks in 7 days; the ${s.target}% SLO allows ${(s.checks * (100 - s.target) / 100).toFixed(1)}`;
+    node.append(
+      el("p", { class: state === "down" || level === "spent" ? "figure is-down" : "figure" }, [
+        document.createTextNode(`${uptime}%`),
+        el("small", { text: `7 days, SLO ${s.target}%` }),
+      ]),
+      bar,
+      el("p", { class: `slo-note is-${level}`, text: level === "spent" ? "Error budget spent" : `Budget ${Math.floor(left)}% left` }),
+    );
+    return node;
+  }
+
   function row(m) {
     const state = stateOf(m);
     const link = el("a", { class: "site-url", href: m.url, rel: "noopener noreferrer nofollow", target: "_blank", text: m.url.replace(/^https?:\/\//, "") });
     const id = el("div", { class: "site-id" }, [
       el("p", { class: "site-name" }, [el("span", { class: "dot", "aria-hidden": "true" }), el("span", { text: m.name })]),
       link,
-      el("p", { class: "site-settings", text: `${m.method}, ${INTERVAL_LABEL[m.interval] || `every ${m.interval}s`}` }),
+      el("p", { class: "site-settings", text: `${m.method}, ${INTERVAL_LABEL[m.interval] || `every ${m.interval}s`}${m.alert ? ", pages on-call" : ""}` }),
     ]);
 
-    const uptime = el("p", { class: state === "down" ? "figure is-down" : "figure" }, [
-      document.createTextNode(m.uptime_24h == null ? "–" : `${m.uptime_24h}%`),
-      el("small", { text: "up in 24 h" }),
-    ]);
+    const uptime = slo(m, state);
 
+    const p95 = m.p95_latency_ms == null ? "" : `p95 ${m.p95_latency_ms} ms, `;
     let last;
     if (!m.last) {
       last = el("p", { class: "last" }, [document.createTextNode("Waiting"), el("small", { text: "first check soon" })]);
     } else if (m.last.ok) {
       last = el("p", { class: "last" }, [
         document.createTextNode(`${m.last.latency_ms} ms`),
-        el("small", { text: `${m.last.status_code}, ${ago(m.last.at)}` }),
+        el("small", { text: `${p95}${m.last.status_code}, ${ago(m.last.at)}` }),
       ]);
     } else {
       last = el("p", { class: "last is-down" }, [

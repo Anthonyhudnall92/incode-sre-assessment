@@ -20,6 +20,7 @@ class FakeDb:
         self.healthy = healthy
         self.monitors = {}
         self.next_id = 1
+        self.mode = "ok"
 
     def _check(self):
         if not self.healthy:
@@ -42,6 +43,14 @@ class FakeDb:
         self.monitors[mid] = {"name": name, "url": url, "method": method,
                               "interval": interval, "token": f"tok{mid}"}
         return mid, f"tok{mid}"
+
+    def demo_mode(self):
+        self._check()
+        return self.mode
+
+    def set_demo_mode(self, mode):
+        self._check()
+        self.mode = mode
 
     def delete_monitor(self, monitor_id, token):
         self._check()
@@ -189,10 +198,44 @@ class AppTest(unittest.TestCase):
         self.assertIn(b'status="499"', metrics)
         self.assertNotIn(b'route="other",status="500"', metrics)
 
+    def test_incident_drill_switches_the_demo_service(self):
+        db = FakeDb()
+        base = self.start(db)
+        self.assertEqual(self.request(base + "/demo/target")[0], 200)
+        status, _, _ = self.request(base + "/internal/demo-mode", "POST", {"mode": "down"})
+        self.assertEqual(status, 200)  # the test client is loopback, like kubectl exec
+        self.assertEqual(self.request(base + "/demo/target")[0], 503)
+        self.assertEqual(self.request(base + "/internal/demo-mode", "POST", {"mode": "on fire"})[0], 400)
+        with mock.patch.object(app, "DEMO_SLOW_SECONDS", 0.2):
+            db.mode = "slow"
+            self.assertEqual(self.request(base + "/demo/target")[0], 200)
+
+    def test_drill_503s_stay_out_of_the_5xx_metric(self):
+        db = FakeDb()
+        db.mode = "down"
+        base = self.start(db)
+        with mock.patch.object(app, "log_event") as logged:
+            self.assertEqual(self.request(base + "/demo/target")[0], 503)
+        events = [(c.args[0], c.kwargs) for c in logged.call_args_list]
+        self.assertIn("demo_request", [e for e, _ in events])
+        self.assertFalse(any("status" in kw for _, kw in events))  # the alarm keys on "status"
+
     def test_api_returns_503_when_db_down(self):
         base = self.start(FakeDb(False))
         self.assertEqual(self.request(base + "/api/monitors")[0], 503)
         self.assertEqual(self.add(base)[0], 503)
+
+
+class ErrorBudgetTest(unittest.TestCase):
+    def test_budget(self):
+        # 10,000 checks at 99.9% allow 10 failures.
+        self.assertEqual(app.error_budget(10000, 10000, 99.9)["budget_left"], 100.0)
+        self.assertEqual(app.error_budget(10000, 9995, 99.9)["budget_left"], 50.0)
+        self.assertEqual(app.error_budget(10000, 9980, 99.9)["budget_left"], 0.0)
+        self.assertEqual(app.error_budget(10000, 9995, 99.9)["uptime"], 99.95)
+        self.assertIsNone(app.error_budget(0, 0, 99.9))
+        self.assertEqual(app.error_budget(5, 5, 100)["budget_left"], 100.0)
+        self.assertEqual(app.error_budget(5, 4, 100)["budget_left"], 0.0)
 
 
 if __name__ == "__main__":

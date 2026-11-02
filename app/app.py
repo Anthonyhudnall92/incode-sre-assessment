@@ -9,9 +9,17 @@ Endpoints
                               uptime and recent checks
   POST   /api/monitors        add one: {"url", "method", "interval", "name"}
   DELETE /api/monitors/<id>   remove one (needs the token returned on add)
+  GET    /demo/target         the demo service: healthy, down or slow on
+                              an operator's command (see below)
   GET    /healthz             liveness: the process is up
   GET    /readyz              readiness: the database answers `SELECT 1`
   GET    /metrics             Prometheus metrics
+
+Incident demo
+  `make incident MODE=down|slow|ok` switches the demo service, which the
+  board watches every minute and which pages on-call when it fails. The
+  switch (POST /internal/demo-mode) only answers connections from inside the
+  pod, so it is reachable through `kubectl exec` (IAM + RBAC), never the ALB.
 
 Security notes
   * Checks are SSRF-safe: see checker.py.
@@ -59,6 +67,9 @@ PORT = int(os.environ.get("PORT", "8080"))
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
 MAX_MONITORS = int(os.environ.get("MAX_MONITORS", "30"))
 INTERVALS = (60, 300, 900, 3600)
+SLO_TARGET = float(os.environ.get("SLO_TARGET", "99.9"))  # percent, over 7 days
+DEMO_MODES = ("ok", "down", "slow")
+DEMO_SLOW_SECONDS = 4
 RETENTION_DAYS = 7
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -67,13 +78,17 @@ USER_AGENT = "UptimeMonitor/1.0 (SRE demo; GET/HEAD every 1-60 min" + (
     f"; +{PUBLIC_URL}/)" if PUBLIC_URL else ")"
 )
 
-# Seeded once, on an empty board, so the demo is never blank. They do not
-# expire and have no delete token.
+# Always on the board, so the demo is never blank. They do not expire, have
+# no delete token, and the last field says whether a failure pages on-call
+# (only our own services do: a stranger's site going down is not our page).
 SEEDS = [
-    ("Example Domain", "https://example.com/", "GET", 60),
-    ("GitHub", "https://github.com/", "HEAD", 300),
-    ("AWS", "https://aws.amazon.com/", "HEAD", 300),
-] + ([("This board", f"{PUBLIC_URL}/healthz", "GET", 60)] if PUBLIC_URL else [])
+    ("Example Domain", "https://example.com/", "GET", 60, False),
+    ("GitHub", "https://github.com/", "HEAD", 300, False),
+    ("AWS", "https://aws.amazon.com/", "HEAD", 300, False),
+] + ([
+    ("This board", f"{PUBLIC_URL}/healthz", "GET", 60, True),
+    ("Demo service", f"{PUBLIC_URL}/demo/target", "GET", 60, True),
+] if PUBLIC_URL else [])
 
 # --- Logging: one JSON object per line (parsed by Fluent Bit -> CloudWatch) ---
 
@@ -152,12 +167,21 @@ CREATE TABLE IF NOT EXISTS checks (
     pod         TEXT        NOT NULL
 );
 CREATE INDEX IF NOT EXISTS checks_by_monitor ON checks (monitor_id, checked_at DESC);
+
+ALTER TABLE monitors ADD COLUMN IF NOT EXISTS alert BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS demo_target (
+    id         INTEGER     PRIMARY KEY CHECK (id = 1),
+    mode       TEXT        NOT NULL CHECK (mode IN ('ok', 'down', 'slow')),
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO demo_target (id, mode) VALUES (1, 'ok') ON CONFLICT DO NOTHING;
 """
 
 LIST_SQL = """
-SELECT m.id, m.name, m.url, m.method, m.interval_s, m.created_at, m.expires_at,
+SELECT m.id, m.name, m.url, m.method, m.interval_s, m.created_at, m.expires_at, m.alert,
        l.checked_at, l.ok, l.status_code, l.latency_ms, l.error,
-       s.total, s.up, s.avg_ms,
+       s.total, s.up, s.p95_ms, w.total, w.up,
        COALESCE(r.recent, '[]'::json)
 FROM monitors m
 LEFT JOIN LATERAL (
@@ -165,9 +189,14 @@ LEFT JOIN LATERAL (
     FROM checks WHERE monitor_id = m.id ORDER BY checked_at DESC LIMIT 1
 ) l ON true
 LEFT JOIN LATERAL (
-    SELECT count(*) AS total, count(*) FILTER (WHERE ok) AS up, avg(latency_ms) AS avg_ms
+    SELECT count(*) AS total, count(*) FILTER (WHERE ok) AS up,
+           percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE ok) AS p95_ms
     FROM checks WHERE monitor_id = m.id AND checked_at > now() - interval '24 hours'
 ) s ON true
+LEFT JOIN LATERAL (
+    SELECT count(*) AS total, count(*) FILTER (WHERE ok) AS up
+    FROM checks WHERE monitor_id = m.id AND checked_at > now() - interval '7 days'
+) w ON true
 LEFT JOIN LATERAL (
     SELECT json_agg(json_build_object('t', checked_at, 'ok', ok, 'ms', latency_ms,
                                       'code', status_code, 'err', error)
@@ -189,7 +218,7 @@ WHERE id IN (
     LIMIT %s
     FOR UPDATE SKIP LOCKED
 )
-RETURNING id, url, method
+RETURNING id, url, method, name, alert
 """
 
 
@@ -207,6 +236,27 @@ def _hash(token: str) -> str:
 
 def _iso(value):
     return value.isoformat() if isinstance(value, datetime) else value
+
+
+def error_budget(total: int, up: int, target: float = None) -> dict | None:
+    """SLO over the window: allowed failures = total * (1 - target). Returns
+    uptime, the target and how much of the budget is left (0 to 100)."""
+    target = SLO_TARGET if target is None else target
+    if not total:
+        return None
+    failed = total - up
+    allowed = total * (100 - target) / 100
+    if allowed > 0:
+        left = max(0.0, 100 * (1 - failed / allowed))
+    else:
+        left = 100.0 if failed == 0 else 0.0
+    return {
+        "target": target,
+        "uptime": round(100 * up / total, 3),
+        "budget_left": round(left, 1),
+        "failed": failed,
+        "checks": total,
+    }
 
 
 class Database:
@@ -282,13 +332,13 @@ class Database:
         with conn.transaction():
             conn.execute("SELECT pg_advisory_xact_lock(424242)")
             conn.execute(SCHEMA)
-            if conn.execute("SELECT count(*) FROM monitors").fetchone()[0] == 0:
-                for name, url, method, interval in SEEDS:
-                    conn.execute(
-                        "INSERT INTO monitors (name, url, method, interval_s) "
-                        "VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
-                        (name, url, method, interval),
-                    )
+            for name, url, method, interval, alert in SEEDS:
+                conn.execute(
+                    "INSERT INTO monitors (name, url, method, interval_s, alert) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON CONFLICT (url, method) DO UPDATE SET alert = EXCLUDED.alert",
+                    (name, url, method, interval, alert),
+                )
         self._schema_ready = True
         log_event("db_schema_ready")
 
@@ -326,8 +376,8 @@ class Database:
         rows = self._run("list_monitors", lambda c: c.execute(LIST_SQL).fetchall())
         MONITORS.set(len(rows))
         monitors = []
-        for (mid, name, url, method, interval, created, expires, last_at, ok,
-             code, ms, err, total, up, avg_ms, recent) in rows:
+        for (mid, name, url, method, interval, created, expires, alert, last_at, ok,
+             code, ms, err, total, up, p95_ms, total_7d, up_7d, recent) in rows:
             monitors.append({
                 "id": mid,
                 "name": name,
@@ -340,8 +390,10 @@ class Database:
                     "at": _iso(last_at), "ok": ok, "status_code": code,
                     "latency_ms": ms, "error": err,
                 },
+                "alert": alert,
                 "uptime_24h": round(100 * up / total, 2) if total else None,
-                "avg_latency_ms": round(avg_ms) if avg_ms is not None else None,
+                "p95_latency_ms": round(p95_ms) if p95_ms is not None else None,
+                "slo": error_budget(total_7d, up_7d),
                 "recent": recent,
             })
         return monitors
@@ -379,7 +431,15 @@ class Database:
 
         return self._run("delete_monitor", _delete)
 
-    def claim_due(self, limit: int) -> list[tuple[int, str, str]]:
+    def demo_mode(self) -> str:
+        return self._run("demo_mode", lambda c: c.execute(
+            "SELECT mode FROM demo_target WHERE id = 1").fetchone()[0])
+
+    def set_demo_mode(self, mode: str) -> None:
+        self._run("set_demo_mode", lambda c: c.execute(
+            "UPDATE demo_target SET mode = %s, changed_at = now() WHERE id = 1", (mode,)))
+
+    def claim_due(self, limit: int) -> list[tuple]:
         return self._run("claim_due", lambda c: c.execute(CLAIM_SQL, (limit,)).fetchall())
 
     def record_check(self, monitor_id: int, result: checker.Result) -> None:
@@ -421,10 +481,15 @@ class Worker:
         self.stop = threading.Event()
         self._last_cleanup = 0.0
 
-    def _check_one(self, monitor_id: int, url: str, method: str) -> None:
+    def _check_one(self, monitor_id: int, url: str, method: str, name: str, alert: bool) -> None:
         result = checker.check(url, method, USER_AGENT)
         CHECKS.labels(result="up" if result.ok else "down").inc()
         CHECK_LATENCY.observe(result.latency_ms / 1000)
+        if not result.ok:
+            # alert=true failures feed the monitor-down alarm (CloudWatch
+            # metric filter); the rest are only shown on the board.
+            log_event("check_failed", logging.WARNING, monitor=name, alert=alert,
+                      status_code=result.status_code, error=result.error)
         try:
             self.db.record_check(monitor_id, result)
         except Exception:  # noqa: BLE001 - logged as db_error by Database
@@ -476,6 +541,8 @@ MAX_BODY = 4096
 def _route(path: str) -> str:
     if path in STATIC_FILES or path.startswith("/static/"):
         return "static"
+    if path in ("/demo/target", "/internal/demo-mode"):
+        return path
     if MONITOR_PATH.match(path):
         return "/api/monitors/:id"
     if path in ("/api/monitors", "/healthz", "/readyz", "/metrics"):
@@ -565,7 +632,13 @@ def make_handler(db, static_dir: Path = STATIC_DIR):
                 quiet = route in ("/healthz", "/readyz", "/metrics", "static") or (
                     route == "/api/monitors" and method == "GET"
                 )
-                if (not quiet or status >= 500) and status != 499:
+                if route == "/demo/target":
+                    # The drill's 503s are the demo service failing on
+                    # purpose; the monitor-down alarm reports them, so they
+                    # stay out of the app's own 5xx metric (no "status").
+                    log_event("demo_request", demo_status=status,
+                              duration_ms=round(elapsed * 1000, 2))
+                elif (not quiet or status >= 500) and status != 499:
                     log_event(
                         "http_request",
                         method=method,
@@ -582,6 +655,16 @@ def make_handler(db, static_dir: Path = STATIC_DIR):
                     return 200
                 if path == "/healthz":
                     return self._json(200, {"status": "ok"})
+                if path == "/demo/target":
+                    try:
+                        mode = db.demo_mode()
+                    except Exception:  # noqa: BLE001
+                        return self._json(503, {"status": "database unavailable"})
+                    if mode == "down":
+                        return self._json(503, {"status": "down", "why": "incident drill"})
+                    if mode == "slow":
+                        time.sleep(DEMO_SLOW_SECONDS)
+                    return self._json(200, {"status": "ok", "mode": mode})
                 if path == "/readyz":
                     try:
                         db.ping()
@@ -613,6 +696,21 @@ def make_handler(db, static_dir: Path = STATIC_DIR):
                     return self._json(503, {"error": "Database unavailable."})
                 log_event("monitor_added", monitor_id=monitor_id, method=verb, interval=interval)
                 return self._json(201, {"id": monitor_id, "token": token})
+
+            if method == "POST" and path == "/internal/demo-mode":
+                # Only from inside the pod (kubectl exec): the ALB and the
+                # other pods connect from VPC addresses, never loopback.
+                if self.client_address[0] not in ("127.0.0.1", "::1"):
+                    return self._json(404, {"error": "Not found."})
+                try:
+                    mode = str(self._read_json().get("mode", ""))
+                except checker.Refused as exc:
+                    return self._json(400, {"error": str(exc)})
+                if mode not in DEMO_MODES:
+                    return self._json(400, {"error": f"mode must be one of {', '.join(DEMO_MODES)}"})
+                db.set_demo_mode(mode)
+                log_event("demo_mode_changed", logging.WARNING, mode=mode)
+                return self._json(200, {"mode": mode})
 
             match = MONITOR_PATH.match(path)
             if method == "DELETE" and match:

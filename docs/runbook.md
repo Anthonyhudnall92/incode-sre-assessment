@@ -65,6 +65,33 @@ fields @timestamp, log_processed.status, log_processed.path, log_processed.error
 
 ---
 
+### `*-monitor-down` — a service we own is failing its uptime check (user-facing)
+
+The board checks our own services (the board's `/healthz` and the demo service) every minute
+from inside the cluster, through the public URL. This alarm fires when one of them fails in 2 of
+the last 3 minutes, and sends an OK notification when it recovers.
+
+1. Open the board: the failing row is red, and its last result says why (HTTP status, timeout,
+   TLS, DNS).
+2. If it is **Demo service**, check whether a drill is running: `make incident MODE=ok` ends it.
+3. If it is **This board** but the board loads for you, the path from the cluster out to the
+   ALB is broken (NAT, DNS, WAF); compare with the `*-5xx` alarm.
+
+### Incident drill (for demos)
+
+With `make tunnel` running:
+
+```bash
+make incident MODE=down   # demo service returns 503: the board goes red within a minute,
+                          # the error budget is spent, and *-monitor-down emails in ~2-3 min
+make incident MODE=slow   # 4-second responses: tall bars and a p95 jump, but still up
+make incident MODE=ok     # recover: green again, then an OK email
+```
+
+The switch only accepts connections from inside the pod, so it is reached with `kubectl exec`
+(your IAM identity and RBAC), never through the ALB. The drill's 503s are logged as
+`demo_request`, not `http_request`, so they do not trip the app's own `*-5xx` alarm.
+
 ### `*-5xx` — app returning server errors (user-facing)
 
 1. Check `DbErrorCount` on the dashboard. If it is rising too, go to **db-errors**.

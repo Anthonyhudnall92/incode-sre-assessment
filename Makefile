@@ -10,7 +10,7 @@ export KUBECONFIG := $(CURDIR)/.kube/config
 TUNNEL_PORT ?= 8443
 API_URL     := $(if $(DIRECT),,https://127.0.0.1:$(TUNNEL_PORT))
 
-.PHONY: help bootstrap backend-config init plan apply release up down status test lint fmt addons argocd argocd-password kubeconfig tunnel
+.PHONY: help bootstrap backend-config init plan apply release up down status test lint fmt addons argocd argocd-password kubeconfig tunnel incident
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
@@ -54,6 +54,11 @@ kubeconfig: ## Write .kube/config for this cluster (gitignored); points at the t
 
 argocd: kubeconfig ## Open the Argo CD UI on https://localhost:8080 (user admin; see argocd-password)
 	kubectl -n argocd port-forward svc/argocd-server 8080:443
+
+incident: kubeconfig ## Incident drill: make incident MODE=down|slow|ok (the demo service on the board)
+	@case "$(MODE)" in ok|down|slow) ;; *) echo "usage: make incident MODE=down|slow|ok"; exit 1;; esac
+	kubectl -n "$$($(TF) output -raw app_namespace)" exec deploy/"$$($(TF) output -raw app_name)" -- python -c \
+	  "import urllib.request as u; r = u.Request('http://127.0.0.1:8080/internal/demo-mode', b'{\"mode\": \"$(MODE)\"}', {'Content-Type': 'application/json'}); print(u.urlopen(r).read().decode())"
 
 argocd-password: ## Print the Argo CD admin password from Secrets Manager
 	@aws secretsmanager get-secret-value --region "$$($(TF) output -raw region)" \

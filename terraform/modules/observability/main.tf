@@ -66,6 +66,22 @@ resource "aws_cloudwatch_log_metric_filter" "app_db_errors" {
   }
 }
 
+# Failed checks of the monitors that page on-call (alert=true: our own
+# services). Failures of sites visitors add are shown on the board only.
+resource "aws_cloudwatch_log_metric_filter" "monitor_down" {
+  name           = "${var.app_name}-monitor-down"
+  log_group_name = var.application_log_group_name
+  pattern        = "{ ($.kubernetes.namespace_name = \"${var.app_namespace}\") && ($.log_processed.event = \"check_failed\") && ($.log_processed.alert IS TRUE) }"
+
+  metric_transformation {
+    name          = "MonitorDownCount"
+    namespace     = local.metrics_ns
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
 # --- Alarms --------------------------------------------------------------------------
 
 # Symptom-based (what users feel) first ...
@@ -79,6 +95,25 @@ resource "aws_cloudwatch_metric_alarm" "app_5xx" {
   period              = 300
   evaluation_periods  = 1
   threshold           = 5
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# Synthetic check: a service we own failed its uptime check in 2 of the last
+# 3 minutes (checks run every minute). One blip does not page; recovery
+# sends an OK notification.
+resource "aws_cloudwatch_metric_alarm" "monitor_down" {
+  alarm_name          = "${var.name}-${var.app_name}-monitor-down"
+  alarm_description   = "A service we own is failing its uptime check (see the board). Drill: make incident MODE=ok."
+  namespace           = local.metrics_ns
+  metric_name         = "MonitorDownCount"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 3
+  datapoints_to_alarm = 2
+  threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = local.alarm_actions
@@ -250,6 +285,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           properties = {
             title = "Alarm status"
             alarms = [
+              aws_cloudwatch_metric_alarm.monitor_down.arn,
               aws_cloudwatch_metric_alarm.app_5xx.arn,
               aws_cloudwatch_metric_alarm.app_no_running_pods.arn,
               aws_cloudwatch_metric_alarm.app_restarts.arn,
