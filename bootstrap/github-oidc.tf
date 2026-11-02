@@ -4,7 +4,7 @@
 # GitHub issues each workflow run a short-lived OIDC token. AWS trusts that
 # issuer and exchanges the token for 1-hour credentials on one of two roles:
 #
-#   sre-demo-github-plan    read-only; only pull requests from this repository
+#   sre-demo-github-plan    read-only; pull requests and main in this repository
 #   sre-demo-github-apply   changes the main stack; only the approved subject
 #                           (the `production` environment once the repo is
 #                           public, `main` until then; see var.github_apply_subject)
@@ -117,8 +117,13 @@ resource "aws_iam_policy" "workload_boundary" {
 
 data "aws_iam_policy_document" "github_trust" {
   for_each = {
-    plan  = "repo:${var.github_repository}:pull_request"
-    apply = "repo:${var.github_repository}:${var.github_apply_subject}"
+    # Pull requests, plus main: the apply workflow shows a read-only plan for
+    # review before the approval-gated apply job starts.
+    plan = [
+      "repo:${var.github_repository}:pull_request",
+      "repo:${var.github_repository}:ref:refs/heads/main",
+    ]
+    apply = ["repo:${var.github_repository}:${var.github_apply_subject}"]
   }
 
   statement {
@@ -140,7 +145,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringEquals"
       variable = "${local.github_oidc_host}:sub"
-      values   = [each.value]
+      values   = each.value
     }
   }
 
