@@ -83,3 +83,14 @@ variable "node_max_pods" {
   type        = number
   default     = 110
 }
+
+variable "addon_versions" {
+  description = "Exact EKS add-on versions. Bump them in a PR (aws eks describe-addon-versions) and review the plan."
+  type        = map(string)
+  default = {
+    "vpc-cni"                         = "v1.23.2-eksbuild.8"
+    "coredns"                         = "v1.13.2-eksbuild.62"
+    "kube-proxy"                      = "v1.34.6-eksbuild.62"
+    "amazon-cloudwatch-observability" = "v7.0.0-eksbuild.1"
+  }
+}

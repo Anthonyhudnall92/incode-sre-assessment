@@ -73,15 +73,18 @@ module "eks" {
   cloudwatch_log_group_retention_in_days = var.log_retention_days
   cloudwatch_log_group_kms_key_id        = var.logs_kms_key_arn
 
+  # Exact versions (var.addon_versions): an upgrade is a reviewed PR with a
+  # plan, never a surprise. "Latest" once pulled in a CloudWatch default
+  # that blocked every new app pod.
   cluster_addons = {
     coredns = {
-      most_recent = true
+      addon_version = var.addon_versions["coredns"]
     }
     kube-proxy = {
-      most_recent = true
+      addon_version = var.addon_versions["kube-proxy"]
     }
     vpc-cni = {
-      most_recent    = true
+      addon_version  = var.addon_versions["vpc-cni"]
       before_compute = true
       # CNI gets its own IRSA role instead of borrowing the node role.
       service_account_role_arn = module.vpc_cni_irsa.iam_role_arn
@@ -236,16 +239,11 @@ resource "terraform_data" "log_groups_ready" {
   input = var.container_log_group_arns
 }
 
-data "aws_eks_addon_version" "cloudwatch_observability" {
-  addon_name         = "amazon-cloudwatch-observability"
-  kubernetes_version = module.eks.cluster_version
-  most_recent        = true
-}
 
 resource "aws_eks_addon" "cloudwatch_observability" {
   cluster_name                = module.eks.cluster_name
   addon_name                  = "amazon-cloudwatch-observability"
-  addon_version               = data.aws_eks_addon_version.cloudwatch_observability.version
+  addon_version               = var.addon_versions["amazon-cloudwatch-observability"]
   service_account_role_arn    = module.cloudwatch_irsa.iam_role_arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
