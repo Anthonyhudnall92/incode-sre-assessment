@@ -4,7 +4,7 @@
 # The ALB and its security groups are created by the AWS Load Balancer
 # Controller, not Terraform. If the cluster is destroyed first they are
 # orphaned and block VPC deletion. So: delete the app namespace, wait for the
-# controller to remove the ALB, then terraform destroy.
+# controller to remove the ALB, destroy the add-ons, then the main stack.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,5 +35,14 @@ if [[ -n "$CLUSTER" ]] && aws eks describe-cluster --region "$REGION" --name "$C
   done
 fi
 
-echo "==> terraform destroy"
+# Add-ons live in the cluster, so they go before it. Skipped if this layer
+# was never initialised.
+if [[ -n "$CLUSTER" ]] && aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
+  echo "==> terraform destroy (add-ons)"
+  terraform -chdir="$ROOT/addons" init -input=false -backend-config="$TF_DIR/backend.hcl" \
+    -backend-config=key=sre-demo/addons.tfstate >/dev/null
+  terraform -chdir="$ROOT/addons" destroy "$@"
+fi
+
+echo "==> terraform destroy (main stack)"
 terraform -chdir="$TF_DIR" destroy "$@"

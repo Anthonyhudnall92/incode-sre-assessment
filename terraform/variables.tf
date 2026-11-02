@@ -110,11 +110,6 @@ variable "node_imds_hop_limit" {
   default     = 1
 }
 
-variable "lb_controller_chart_version" {
-  description = "Helm chart version for the AWS Load Balancer Controller."
-  type        = string
-  default     = "1.13.0"
-}
 
 # --- Database ------------------------------------------------------------------
 

@@ -65,22 +65,21 @@ module "eks_cluster" {
 
   cluster_admins = var.cluster_admins
 
-  name                        = local.name
-  kubernetes_version          = var.kubernetes_version
-  region                      = var.region
-  vpc_id                      = module.network.vpc_id
-  private_subnet_ids          = module.network.private_subnet_ids
-  admin_cidrs                 = var.admin_cidrs
-  node_ami_type               = var.node_ami_type
-  node_instance_types         = var.node_instance_types
-  node_min_size               = var.node_min_size
-  node_desired_size           = var.node_desired_size
-  node_max_size               = var.node_max_size
-  node_imds_hop_limit         = var.node_imds_hop_limit
-  lb_controller_chart_version = var.lb_controller_chart_version
-  log_retention_days          = var.log_retention_days
-  logs_kms_key_arn            = module.log_storage.kms_key_arn
-  container_log_group_arns    = module.log_storage.container_log_group_arns
+  name                     = local.name
+  kubernetes_version       = var.kubernetes_version
+  region                   = var.region
+  vpc_id                   = module.network.vpc_id
+  private_subnet_ids       = module.network.private_subnet_ids
+  admin_cidrs              = var.admin_cidrs
+  node_ami_type            = var.node_ami_type
+  node_instance_types      = var.node_instance_types
+  node_min_size            = var.node_min_size
+  node_desired_size        = var.node_desired_size
+  node_max_size            = var.node_max_size
+  node_imds_hop_limit      = var.node_imds_hop_limit
+  log_retention_days       = var.log_retention_days
+  logs_kms_key_arn         = module.log_storage.kms_key_arn
+  container_log_group_arns = module.log_storage.container_log_group_arns
 }
 
 module "database" {

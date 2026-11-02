@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 TF    := terraform -chdir=terraform
 TFB   := terraform -chdir=bootstrap
 
-.PHONY: help bootstrap backend-config init plan apply deploy up down status test lint fmt
+.PHONY: help bootstrap backend-config init plan apply deploy up down status test lint fmt addons
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
@@ -28,7 +28,11 @@ apply: ## terraform apply the saved plan
 deploy: ## Build, scan, push and deploy the app
 	scripts/deploy.sh
 
-up: init plan apply deploy ## Everything, from zero to a running app
+addons: ## Install in-cluster add-ons (needs EKS API access: run from admin_cidrs)
+	terraform -chdir=addons init -input=false -backend-config=../terraform/backend.hcl -backend-config=key=sre-demo/addons.tfstate
+	terraform -chdir=addons apply
+
+up: init plan apply addons deploy ## Everything, from zero to a running app
 
 down: ## Tear everything down (ALB first, then Terraform)
 	scripts/destroy.sh
