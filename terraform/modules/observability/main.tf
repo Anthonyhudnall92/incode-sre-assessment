@@ -318,7 +318,7 @@ resource "aws_cloudwatch_dashboard" "main" {
           height = 3
           properties = {
             title = "Alarm status"
-            alarms = [
+            alarms = concat(aws_cloudwatch_metric_alarm.external_down[*].arn, [
               aws_cloudwatch_metric_alarm.monitor_down.arn,
               aws_cloudwatch_metric_alarm.telemetry_silent.arn,
               aws_cloudwatch_metric_alarm.app_5xx.arn,
@@ -330,7 +330,7 @@ resource "aws_cloudwatch_dashboard" "main" {
               aws_cloudwatch_metric_alarm.rds_storage.arn,
               aws_cloudwatch_metric_alarm.rds_connections.arn,
               aws_cloudwatch_metric_alarm.rds_memory.arn,
-            ]
+            ])
           }
         },
         {
