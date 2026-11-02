@@ -64,6 +64,13 @@ BIG="ContextKeyName=ec2:InstanceType,ContextKeyValues=m5.24xlarge,ContextKeyType
 sim "$APPLY" allowed ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "$T $TYPE" "launch the stack-tagged t3.micro jump host"
 sim "$APPLY" denied  ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "$T $BIG" "launch a big instance, even tagged"
 sim "$APPLY" denied  ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "" "launch an untagged instance"
+LTARN="arn:aws:ec2:us-east-1:${ACCT}:launch-template/lt-x"
+NODE="ContextKeyName=ec2:InstanceType,ContextKeyValues=t3.medium,ContextKeyType=string"
+VIALT="ContextKeyName=ec2:LaunchTemplate,ContextKeyValues=${LTARN},ContextKeyType=string"
+sim "$APPLY" allowed ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "$NODE $VIALT" "node group dry run: t3.medium from a launch template"
+sim "$APPLY" denied  ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "$NODE" "t3.medium without a launch template"
+sim "$APPLY" allowed ec2:RunInstances "$LTARN" "$RT" "use the stack-tagged launch template"
+sim "$APPLY" denied  ec2:RunInstances "$LTARN" "" "use an untagged launch template"
 sim "$APPLY" allowed ec2:MonitorInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/i-x" "$RT" "detailed monitoring on stack instances"
 
 echo "passed: $PASS  failed: $FAIL"
