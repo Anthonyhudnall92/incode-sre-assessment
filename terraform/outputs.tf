@@ -7,7 +7,7 @@ output "cluster_name" {
 }
 
 output "kubeconfig_command" {
-  value = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks_cluster.cluster_name}"
+  value = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks_cluster.cluster_name} --kubeconfig .kube/config"
 }
 
 output "vpc_cidr" {
