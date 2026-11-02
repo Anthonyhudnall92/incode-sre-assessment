@@ -250,6 +250,21 @@ resource "aws_eks_addon" "cloudwatch_observability" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
+  # Application Signals "auto-monitor" (on by default since v7) injects an
+  # OpenTelemetry init container into every workload. That container does not
+  # meet Pod Security "restricted", so the app namespace rejected every new
+  # pod. Keep Container Insights (metrics and logs); traces will come from
+  # instrumentation we choose, not from injection.
+  configuration_values = jsonencode({
+    manager = {
+      applicationSignals = {
+        autoMonitor = {
+          monitorAllServices = false
+        }
+      }
+    }
+  })
+
   # After the nodes (it runs a DaemonSet) and after its log groups exist.
   depends_on = [module.eks, terraform_data.log_groups_ready]
 }
