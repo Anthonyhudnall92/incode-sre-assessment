@@ -110,7 +110,8 @@ jobs:
         run: docker build -t demo-app:ci app
 
       - name: trivy image scan (fail on fixable HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.33.1
+        # Pinned by commit: a tag can be moved to different code, a SHA cannot.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: demo-app:ci
           severity: CRITICAL,HIGH

@@ -45,6 +45,8 @@ resource "aws_iam_openid_connect_provider" "github" {
 # need), no S3, nothing on the state key.
 
 data "aws_iam_policy_document" "workload_boundary" {
+  # checkov:skip=CKV_AWS_107:A boundary is a ceiling, not a grant. Nodes need ecr:GetAuthorizationToken to pull images; each role's own policy decides what it actually gets.
+  # checkov:skip=CKV_AWS_108:A boundary is a ceiling, not a grant. The app must read its own DB secret; its role policy limits that to one secret ARN.
   statement {
     sid = "WorkloadServices"
     actions = [
@@ -479,10 +481,16 @@ data "aws_iam_policy_document" "github_apply_services" {
   }
 
   # RDS creates and rotates its own master-password secret (rds!...) on the
-  # caller's behalf, so the caller needs rights on those secrets.
+  # caller's behalf, so the caller needs rights to manage those secrets, but
+  # never to read their value: CI cannot see the database password.
   statement {
-    sid       = "DatabaseManagedSecret"
-    actions   = ["secretsmanager:*"]
+    sid = "DatabaseManagedSecret"
+    actions = [
+      "secretsmanager:CreateSecret", "secretsmanager:DeleteSecret",
+      "secretsmanager:DescribeSecret", "secretsmanager:RotateSecret",
+      "secretsmanager:TagResource", "secretsmanager:UntagResource",
+      "secretsmanager:UpdateSecret",
+    ]
     resources = ["${local.arn_prefix}:secretsmanager:${var.region}:${local.account_id}:secret:rds!*"]
   }
 
@@ -552,7 +560,6 @@ data "aws_iam_policy_document" "github_apply_services" {
       "acm:Describe*", "acm:List*", "ecr:GetAuthorizationToken", "ecr:DescribeRepositories",
       "rds:Describe*", "rds:ListTagsForResource", "kms:List*", "sns:List*",
       "route53:ListHostedZones*", "route53:GetChange", "tag:GetResources",
-      "ssm:GetParameter*",
     ]
     resources = ["*"]
   }
