@@ -26,7 +26,7 @@ locals {
             admin = {
               existingSecret = kubernetes_secret_v1.grafana_admin[0].metadata[0].name
               userKey        = "admin-user"
-              passwordKey    = "admin-password"
+              passwordKey    = "admin-password" # gitleaks:allow (a key name, not a secret)
             }
 
             serviceAccount = {
