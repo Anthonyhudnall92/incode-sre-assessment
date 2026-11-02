@@ -1,0 +1,5 @@
+apiVersion: v2
+name: uptime
+description: The demo app, deployed by Argo CD. Environment values are set by addons/, not committed.
+type: application
+version: 0.1.0

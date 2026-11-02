@@ -18,3 +18,8 @@ output "certificate_arn" {
   description = "Validated ACM certificate ARN, or empty when no domain is configured."
   value       = local.create_cert ? aws_acm_certificate_validation.app[0].certificate_arn : ""
 }
+
+output "external_dns_role_arn" {
+  description = "IAM role for ExternalDNS, or empty when no domain is configured."
+  value       = local.create_cert ? module.external_dns_irsa[0].iam_role_arn : ""
+}

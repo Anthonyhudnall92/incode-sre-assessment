@@ -8,7 +8,7 @@ framework:
   - dockerfile
   - github_actions
 skip-path:
-  - k8s/          # raw ${VAR} templates; CI scans the rendered/ output instead
+  - deploy/charts/ # Helm templates; CI scans the rendered/ output instead
   - .terraform/
 skip-check:
   # --- Cost trade-offs for a short-lived exercise environment -----------------

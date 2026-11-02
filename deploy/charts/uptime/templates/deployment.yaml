@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ${APP_NAME}
-  namespace: ${APP_NAMESPACE}
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/name: ${APP_NAME}
+    {{- include "uptime.labels" . | nindent 4 }}
 spec:
-  replicas: 2
+  replicas: {{ .Values.replicas }}
   revisionHistoryLimit: 3
   selector:
     matchLabels:
-      app.kubernetes.io/name: ${APP_NAME}
+      {{- include "uptime.labels" . | nindent 6 }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -19,9 +19,12 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: ${APP_NAME}
+        {{- include "uptime.labels" . | nindent 8 }}
+      annotations:
+        # Roll the pods when their configuration changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
-      serviceAccountName: ${APP_NAME}
+      serviceAccountName: {{ .Release.Name }}
       # No Kubernetes API token in the pod. (IRSA mounts its own,
       # audience-scoped STS token independently of this setting.)
       automountServiceAccountToken: false
@@ -39,11 +42,11 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
-              app.kubernetes.io/name: ${APP_NAME}
+              {{- include "uptime.labels" . | nindent 14 }}
       containers:
         - name: app
-          # Pinned by immutable digest (set by scripts/deploy.sh), never :latest.
-          image: ${APP_IMAGE}
+          # Pinned by immutable digest, never a tag.
+          image: {{ include "uptime.image" . }}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -51,7 +54,7 @@ spec:
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: ${APP_NAME}-config
+                name: {{ .Release.Name }}-config
           env:
             - name: POD_NAME
               valueFrom:
@@ -65,12 +68,7 @@ spec:
             capabilities:
               drop: ["ALL"]
           resources:
-            requests:
-              cpu: 50m
-              memory: 96Mi
-            limits:
-              cpu: 250m
-              memory: 192Mi
+            {{- toYaml .Values.resources | nindent 12 }}
           startupProbe:
             httpGet:
               path: /healthz

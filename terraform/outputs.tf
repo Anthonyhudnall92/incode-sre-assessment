@@ -7,7 +7,7 @@ output "cluster_name" {
 }
 
 output "kubeconfig_command" {
-  value = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks_cluster.cluster_name}"
+  value = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks_cluster.cluster_name} --kubeconfig .kube/config"
 }
 
 output "vpc_cidr" {
@@ -74,4 +74,9 @@ output "alerts_topic_arn" {
 
 output "dashboard_url" {
   value = module.observability.dashboard_url
+}
+
+output "external_dns_role_arn" {
+  description = "IAM role for ExternalDNS, or empty when no domain is configured."
+  value       = module.app_platform.external_dns_role_arn
 }

@@ -3,8 +3,9 @@
 #
 # The ALB and its security groups are created by the AWS Load Balancer
 # Controller, not Terraform. If the cluster is destroyed first they are
-# orphaned and block VPC deletion. So: delete the app namespace, wait for the
-# controller to remove the ALB, destroy the add-ons, then the main stack.
+# orphaned and block VPC deletion. So: delete the app's Argo CD Application
+# (its finalizer deletes the Ingress), wait for the controller to remove the
+# ALB, destroy the add-ons, then the main stack.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,11 +19,18 @@ out() { jq -r --arg k "$1" '.[$k].value // empty' <<<"$TF_OUT"; }
 REGION="$(out region)"
 CLUSTER="$(out cluster_name)"
 NAMESPACE="$(out app_namespace)"
+APP="$(out app_name)"
 
 if [[ -n "$CLUSTER" ]] && aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
   aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" --kubeconfig "$KUBECONFIG" >/dev/null
-  echo "==> Deleting namespace $NAMESPACE (removes the Ingress and its ALB)"
-  kubectl delete namespace "$NAMESPACE" --ignore-not-found --wait=true --timeout=300s || true
+  # Deleting the namespace directly would not stick: Argo CD would recreate it.
+  if kubectl -n argocd get application "$APP" >/dev/null 2>&1; then
+    echo "==> Deleting Argo CD application $APP (removes the Ingress and its ALB)"
+    kubectl -n argocd delete application "$APP" --wait=true --timeout=300s || true
+  else
+    echo "==> Deleting namespace $NAMESPACE (removes the Ingress and its ALB)"
+    kubectl delete namespace "$NAMESPACE" --ignore-not-found --wait=true --timeout=300s || true
+  fi
 
   echo "==> Waiting for controller-managed load balancers to disappear"
   for _ in $(seq 1 60); do

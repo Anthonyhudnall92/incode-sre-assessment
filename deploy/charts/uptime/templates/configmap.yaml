@@ -1,0 +1,14 @@
+# Non-secret configuration only. The DB password is NOT here: the app fetches
+# it from Secrets Manager at runtime using DB_SECRET_ARN.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  namespace: {{ .Release.Namespace }}
+data:
+  DB_HOST: {{ required "db.host is required" .Values.db.host | quote }}
+  DB_PORT: {{ .Values.db.port | quote }}
+  DB_NAME: {{ required "db.name is required" .Values.db.name | quote }}
+  DB_SECRET_ARN: {{ required "db.secretArn is required" .Values.db.secretArn | quote }}
+  AWS_REGION: {{ .Values.region | quote }}
+  LOG_LEVEL: {{ .Values.logLevel | quote }}

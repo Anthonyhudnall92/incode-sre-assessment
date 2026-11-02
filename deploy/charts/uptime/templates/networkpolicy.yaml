@@ -5,11 +5,12 @@
 #               and kubelet health probes on the node IPs).
 # 3. Allow out: DNS to CoreDNS, PostgreSQL to the database subnets only,
 #               HTTPS for AWS APIs (STS, Secrets Manager), except IMDS.
+{{- $vpc := required "vpcCidr is required" .Values.vpcCidr }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny-all
-  namespace: ${APP_NAMESPACE}
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector: {}
   policyTypes: ["Ingress", "Egress"]
@@ -17,17 +18,17 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ${APP_NAME}-allow
-  namespace: ${APP_NAMESPACE}
+  name: {{ .Release.Name }}-allow
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: ${APP_NAME}
+      {{- include "uptime.labels" . | nindent 6 }}
   policyTypes: ["Ingress", "Egress"]
   ingress:
     - from:
         - ipBlock:
-            cidr: ${VPC_CIDR}
+            cidr: {{ $vpc }}
       ports:
         - protocol: TCP
           port: 8080
@@ -47,7 +48,10 @@ spec:
           port: 53
     # PostgreSQL, database subnets only
     - to:
-${DB_EGRESS_PEERS}
+        {{- range required "db.subnetCidrs is required" .Values.db.subnetCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
       ports:
         - protocol: TCP
           port: 5432
@@ -57,7 +61,7 @@ ${DB_EGRESS_PEERS}
             cidr: 0.0.0.0/0
             except:
               - 169.254.169.254/32
-              - ${VPC_CIDR}
+              - {{ $vpc }}
       ports:
         - protocol: TCP
           port: 443

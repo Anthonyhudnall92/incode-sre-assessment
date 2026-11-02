@@ -2,7 +2,10 @@ SHELL := /usr/bin/env bash
 TF    := terraform -chdir=terraform
 TFB   := terraform -chdir=bootstrap
 
-.PHONY: help bootstrap backend-config init plan apply deploy up down status test lint fmt addons
+# Every kubectl here uses the repo-local kubeconfig, never your current context.
+export KUBECONFIG := $(CURDIR)/.kube/config
+
+.PHONY: help bootstrap backend-config init plan apply release up down status test lint fmt addons argocd kubeconfig
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
@@ -25,19 +28,27 @@ plan: ## terraform plan
 apply: ## terraform apply the saved plan
 	$(TF) apply tfplan
 
-deploy: ## Build, scan, push and deploy the app
-	scripts/deploy.sh
+release: ## Build, scan and push the app image, and pin its digest in the chart (then PR it)
+	scripts/release.sh
 
-addons: ## Install in-cluster add-ons (needs EKS API access: run from admin_cidrs)
+addons: ## Install Argo CD and its apps (needs EKS API access: run from admin_cidrs)
 	terraform -chdir=addons init -input=false -backend-config=../terraform/backend.hcl -backend-config=key=sre-demo/addons.tfstate
 	terraform -chdir=addons apply
 
-up: init plan apply addons deploy ## Everything, from zero to a running app
+kubeconfig: ## Write .kube/config for this cluster (gitignored)
+	aws eks update-kubeconfig --region "$$($(TF) output -raw region)" --name "$$($(TF) output -raw cluster_name)" --kubeconfig "$$KUBECONFIG"
+
+argocd: kubeconfig ## Open the Argo CD UI on https://localhost:8443 (prints the admin password)
+	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo "  <- admin password"
+	kubectl -n argocd port-forward svc/argocd-server 8443:443
+
+up: init plan apply addons ## Everything, from zero to a running app (Argo CD deploys it)
 
 down: ## Tear everything down (ALB first, then Terraform)
 	scripts/destroy.sh
 
-status: ## Quick health view
+status: kubeconfig ## Quick health view
+	kubectl -n argocd get applications
 	kubectl -n "$$($(TF) output -raw app_namespace)" get deploy,pods,svc,ingress,networkpolicy -o wide
 	@$(TF) output -raw dashboard_url; echo
 
