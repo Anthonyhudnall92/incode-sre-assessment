@@ -85,9 +85,16 @@ module "eks" {
       before_compute = true
       # CNI gets its own IRSA role instead of borrowing the node role.
       service_account_role_arn = module.vpc_cni_irsa.iam_role_arn
-      # Enforce Kubernetes NetworkPolicy natively in the VPC CNI.
+      # Enforce Kubernetes NetworkPolicy natively in the VPC CNI, and hand
+      # out /28 prefixes instead of single IPs, so a t3.medium can run 110
+      # pods instead of 17 (see node_max_pods). Pod IPs still come from the
+      # private subnets.
       configuration_values = jsonencode({
         enableNetworkPolicy = "true"
+        env = {
+          ENABLE_PREFIX_DELEGATION = "true"
+          WARM_PREFIX_TARGET       = "1"
+        }
       })
     }
   }
@@ -134,6 +141,21 @@ module "eks" {
           }
         }
       }
+
+      # Tell the kubelet about the larger pod capacity that prefix
+      # delegation gives (AWS's figure for instance types under 30 vCPUs).
+      cloudinit_pre_nodeadm = [{
+        content_type = "application/node.eks.aws"
+        content      = <<-EOT
+          ---
+          apiVersion: node.eks.aws/v1alpha1
+          kind: NodeConfig
+          spec:
+            kubelet:
+              config:
+                maxPods: ${var.node_max_pods}
+        EOT
+      }]
 
       labels = {
         workload = "general"
