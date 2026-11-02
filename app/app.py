@@ -505,11 +505,18 @@ class Worker:
         return len(claimed)
 
     def loop(self) -> None:
+        last_beat = 0.0
         while not self.stop.wait(self.poll_seconds):
             try:
                 self.run_once()
             except Exception:  # noqa: BLE001 - the DB layer logged it; retry next tick
                 pass
+            # A line a minute proves the whole log path (app, Fluent Bit,
+            # CloudWatch) is alive: the telemetry-silent alarm fires when
+            # these stop arriving, so a quiet pipeline never reads as healthy.
+            if time.monotonic() - last_beat >= 60:
+                log_event("heartbeat")
+                last_beat = time.monotonic()
         self.pool.shutdown(wait=False, cancel_futures=True)
 
 

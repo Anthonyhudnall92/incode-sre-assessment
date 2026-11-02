@@ -82,6 +82,24 @@ resource "aws_cloudwatch_log_metric_filter" "monitor_down" {
   }
 }
 
+# One heartbeat a minute from each app pod (the checker loop). If these stop,
+# either the app or the log pipeline is down, and every log-based alarm
+# above would be reading silence as "no errors".
+resource "aws_cloudwatch_log_metric_filter" "heartbeat" {
+  name           = "${var.app_name}-heartbeat"
+  log_group_name = var.application_log_group_name
+  pattern        = "{ ($.kubernetes.namespace_name = \"${var.app_namespace}\") && ($.log_processed.event = \"heartbeat\") }"
+
+  metric_transformation {
+    name      = "HeartbeatCount"
+    namespace = local.metrics_ns
+    value     = "1"
+    unit      = "Count"
+    # No default_value: when nothing arrives, the metric is missing, and
+    # the alarm below treats missing as breaching.
+  }
+}
+
 # --- Alarms --------------------------------------------------------------------------
 
 # Symptom-based (what users feel) first ...
@@ -116,6 +134,22 @@ resource "aws_cloudwatch_metric_alarm" "monitor_down" {
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# Dead man's switch for the telemetry itself.
+resource "aws_cloudwatch_metric_alarm" "telemetry_silent" {
+  alarm_name          = "${var.name}-${var.app_name}-telemetry-silent"
+  alarm_description   = "No app heartbeat reached CloudWatch for 5 minutes: the app or the log pipeline (Fluent Bit) is down, so the log-based alarms cannot see errors."
+  namespace           = local.metrics_ns
+  metric_name         = "HeartbeatCount"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
 }
@@ -286,6 +320,7 @@ resource "aws_cloudwatch_dashboard" "main" {
             title = "Alarm status"
             alarms = [
               aws_cloudwatch_metric_alarm.monitor_down.arn,
+              aws_cloudwatch_metric_alarm.telemetry_silent.arn,
               aws_cloudwatch_metric_alarm.app_5xx.arn,
               aws_cloudwatch_metric_alarm.app_no_running_pods.arn,
               aws_cloudwatch_metric_alarm.app_restarts.arn,

@@ -77,6 +77,17 @@ the last 3 minutes, and sends an OK notification when it recovers.
 3. If it is **This board** but the board loads for you, the path from the cluster out to the
    ALB is broken (NAT, DNS, WAF); compare with the `*-5xx` alarm.
 
+### `*-telemetry-silent` — no app heartbeat for 5 minutes
+
+Each app pod logs a `heartbeat` line every minute. When none reach CloudWatch, either the app
+is down or the log path is broken, and the log-based alarms (`*-5xx`, `*-db-errors`,
+`*-monitor-down`) cannot see anything: treat their silence as unknown, not healthy.
+
+1. `kubectl -n uptime get pods`: if the app is down, see **no-running-pods**.
+2. If the app is up, check Fluent Bit: `kubectl -n amazon-cloudwatch get pods` and its logs.
+3. Check the board directly in a browser; the external Synthetics canary (when added) covers
+   the public path independently.
+
 ### Incident drill (for demos)
 
 With `make tunnel` running:
