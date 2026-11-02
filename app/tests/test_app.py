@@ -176,6 +176,19 @@ class AppTest(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertIn("full", body["error"])
 
+    def test_client_disconnect_is_not_a_5xx(self):
+        handler = app.make_handler(FakeDb())
+        handler._dispatch = lambda self, method, path: (_ for _ in ()).throw(BrokenPipeError())
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        with self.assertRaises(Exception):  # the server never answers
+            self.request(f"http://127.0.0.1:{server.server_address[1]}/gone-now")
+        metrics = app.generate_latest()
+        self.assertIn(b'status="499"', metrics)
+        self.assertNotIn(b'route="other",status="500"', metrics)
+
     def test_api_returns_503_when_db_down(self):
         base = self.start(FakeDb(False))
         self.assertEqual(self.request(base + "/api/monitors")[0], 503)

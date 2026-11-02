@@ -187,7 +187,12 @@
         }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) { say(body.error || `Could not add it (HTTP ${res.status}).`, "error"); return; }
+      if (!res.ok) {
+        // A 403 without a JSON error comes from the web application firewall.
+        const blocked = res.status === 403 && !body.error;
+        say(blocked ? "The firewall blocked that address. Try a public website." : body.error || `Could not add it (HTTP ${res.status}).`, "error");
+        return;
+      }
       tokens[body.id] = body.token;
       saveTokens(tokens);
       form.reset();

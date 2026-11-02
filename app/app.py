@@ -549,6 +549,10 @@ def make_handler(db, static_dir: Path = STATIC_DIR):
             status = 500
             try:
                 status = self._dispatch(method, path)
+            except (BrokenPipeError, ConnectionResetError):
+                # The client went away mid-response (a probe timing out, a
+                # closed tab). Not a server error: don't count it as a 5xx.
+                status = 499
             except Exception as exc:  # noqa: BLE001 - never leak a traceback
                 log_event("unhandled_error", logging.ERROR, error_type=type(exc).__name__)
                 status = self._json(500, {"error": "Internal error."})
@@ -561,7 +565,7 @@ def make_handler(db, static_dir: Path = STATIC_DIR):
                 quiet = route in ("/healthz", "/readyz", "/metrics", "static") or (
                     route == "/api/monitors" and method == "GET"
                 )
-                if not quiet or status >= 500:
+                if (not quiet or status >= 500) and status != 499:
                     log_event(
                         "http_request",
                         method=method,
