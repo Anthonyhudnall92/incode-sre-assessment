@@ -67,7 +67,6 @@ module "eks_cluster" {
 
   name                     = local.name
   kubernetes_version       = var.kubernetes_version
-  region                   = var.region
   vpc_id                   = module.network.vpc_id
   private_subnet_ids       = module.network.private_subnet_ids
   admin_cidrs              = var.admin_cidrs

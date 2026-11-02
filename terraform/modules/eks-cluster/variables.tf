@@ -6,10 +6,6 @@ variable "kubernetes_version" {
   type = string
 }
 
-variable "region" {
-  type = string
-}
-
 variable "vpc_id" {
   type = string
 }
