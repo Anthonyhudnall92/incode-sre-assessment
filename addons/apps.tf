@@ -10,6 +10,11 @@
 # no longer declared (prune). Deleting an Application deletes its resources
 # (finalizer), which is how scripts/destroy.sh removes the ALB before the VPC.
 
+data "aws_route53_zone" "app" {
+  count   = local.dns ? 1 : 0
+  zone_id = local.zone_id
+}
+
 data "aws_iam_role" "lb_controller" {
   name = "${local.main.cluster_name}-lb-controller"
 }
@@ -167,9 +172,12 @@ locals {
                 annotations = { "eks.amazonaws.com/role-arn" = local.external_dns_role_arn }
               }
               sources = ["ingress"]
-              # Only this zone and this name; never delete a record it did
-              # not create (TXT ownership records mark its own).
-              domainFilters = [local.domain]
+              # Only the app zone (the ID filter and its IAM role both hold it
+              # there); never delete a record it did not create (TXT ownership
+              # records mark its own). The domain filter must be the zone's
+              # name: it selects zones, and the zone is not inside a filter
+              # for one of its subdomains.
+              domainFilters = [data.aws_route53_zone.app[0].name]
               extraArgs     = ["--zone-id-filter=${local.zone_id}"]
               policy        = "upsert-only"
               registry      = "txt"
