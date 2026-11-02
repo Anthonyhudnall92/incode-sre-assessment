@@ -62,5 +62,5 @@ Examples: `infra/github-oidc-roles`, `fix/app-dir-permissions`.
   security groups and parameter groups with `create_before_destroy`.
 - Known exception: the IAM policies the `iam-role-for-service-accounts-eks`
   module ships for the VPC CNI and the load balancer controller are always
-  name-prefixed. We keep them rather than copying the policies by hand,
-  because the module keeps them up to date.
+  name-prefixed (`sre-demo-CNI_Policy-<timestamp>`). We keep them rather than
+  copying the policies by hand, because the module keeps them up to date.

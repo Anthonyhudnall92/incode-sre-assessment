@@ -15,7 +15,16 @@ locals {
     Project     = var.project
     Environment = var.environment
     ManagedBy   = "terraform"
+    # The CI apply role's KMS and ACM permissions are scoped to this tag
+    # (bootstrap/github-oidc.tf), which keeps it away from bootstrap resources.
+    Stack = "main"
   }
+}
+
+# Created by the bootstrap layer. Every IAM role in this stack carries it, and
+# the CI apply role can only create roles that do.
+data "aws_iam_policy" "workload_boundary" {
+  name = "${local.name}-workload-boundary"
 }
 
 # Account-level guardrail: every new EBS volume in this region is encrypted,
@@ -38,6 +47,8 @@ module "log_storage" {
 module "network" {
   source = "./modules/network"
 
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
+
   name               = local.name
   cidr               = var.vpc_cidr
   azs                = local.azs
@@ -49,6 +60,8 @@ module "network" {
 
 module "eks_cluster" {
   source = "./modules/eks-cluster"
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
 
   cluster_admins = var.cluster_admins
 
@@ -68,11 +81,12 @@ module "eks_cluster" {
   log_retention_days          = var.log_retention_days
   logs_kms_key_arn            = module.log_storage.kms_key_arn
   container_log_group_arns    = module.log_storage.container_log_group_arns
-
 }
 
 module "database" {
   source = "./modules/database"
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
 
   name                  = local.name
   vpc_id                = module.network.vpc_id
@@ -89,6 +103,8 @@ module "database" {
 
 module "app_platform" {
   source = "./modules/app-platform"
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
 
   name               = local.name
   region             = var.region

@@ -64,6 +64,11 @@ variable "logs_kms_key_arn" {
   type        = string
 }
 
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary attached to every IAM role this module creates."
+  type        = string
+}
+
 variable "container_log_group_arns" {
   description = "Container Insights log groups that must exist before the CloudWatch add-on starts."
   type        = list(string)

@@ -111,8 +111,9 @@ data "aws_iam_policy_document" "monitoring_assume" {
 }
 
 resource "aws_iam_role" "monitoring" {
-  name               = "${var.name}-rds-monitoring"
-  assume_role_policy = data.aws_iam_policy_document.monitoring_assume.json
+  name                 = "${var.name}-rds-monitoring"
+  permissions_boundary = var.permissions_boundary_arn
+  assume_role_policy   = data.aws_iam_policy_document.monitoring_assume.json
 }
 
 resource "aws_iam_role_policy_attachment" "monitoring" {

@@ -69,6 +69,8 @@ module "app_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
+  role_permissions_boundary_arn = var.permissions_boundary_arn
+
   role_name = "${var.name}-${var.app_name}"
   role_policy_arns = {
     app = aws_iam_policy.app.arn
