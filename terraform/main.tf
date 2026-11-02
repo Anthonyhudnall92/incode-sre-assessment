@@ -25,7 +25,7 @@ resource "aws_ebs_encryption_by_default" "this" {
 }
 
 # KMS key for every log group + the Container Insights log groups. Must exist
-# before the cluster's CloudWatch add-on starts shipping logs (depends_on below).
+# before the cluster's CloudWatch add-on starts shipping logs (container_log_group_arns).
 module "log_storage" {
   source = "./modules/log-storage"
 
@@ -67,8 +67,8 @@ module "eks_cluster" {
   lb_controller_chart_version = var.lb_controller_chart_version
   log_retention_days          = var.log_retention_days
   logs_kms_key_arn            = module.log_storage.kms_key_arn
+  container_log_group_arns    = module.log_storage.container_log_group_arns
 
-  depends_on = [aws_ebs_encryption_by_default.this, module.log_storage]
 }
 
 module "database" {
@@ -118,4 +118,9 @@ module "observability" {
 
   kms_key_arn                = module.log_storage.kms_key_arn
   application_log_group_name = module.log_storage.application_log_group_name
+}
+
+moved {
+  from = module.eks_cluster.module.eks.aws_eks_addon.this["amazon-cloudwatch-observability"]
+  to   = module.eks_cluster.aws_eks_addon.cloudwatch_observability
 }

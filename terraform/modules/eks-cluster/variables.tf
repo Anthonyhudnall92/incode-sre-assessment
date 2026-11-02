@@ -63,3 +63,8 @@ variable "logs_kms_key_arn" {
   description = "KMS key for CloudWatch log group encryption."
   type        = string
 }
+
+variable "container_log_group_arns" {
+  description = "Container Insights log groups that must exist before the CloudWatch add-on starts."
+  type        = list(string)
+}

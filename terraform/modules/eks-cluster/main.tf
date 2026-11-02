@@ -78,11 +78,6 @@ module "eks" {
         enableNetworkPolicy = "true"
       })
     }
-    # Container Insights metrics + Fluent Bit log shipping to CloudWatch.
-    amazon-cloudwatch-observability = {
-      most_recent              = true
-      service_account_role_arn = module.cloudwatch_irsa.iam_role_arn
-    }
   }
 
   eks_managed_node_groups = {
@@ -185,6 +180,35 @@ module "cloudwatch_irsa" {
 }
 
 # --- AWS Load Balancer Controller ----------------------------------------------
+
+# --- Container Insights add-on ----------------------------------------------------
+# Metrics + Fluent Bit log shipping to CloudWatch. Kept out of the module's
+# cluster_addons so it can wait for the pre-created log groups (KMS key and
+# retention) with a resource-level depends_on. A module-level depends_on would
+# defer every data source in this module whenever log storage changes, turning
+# unrelated attributes "known after apply" and forcing needless replacements.
+
+resource "terraform_data" "log_groups_ready" {
+  input = var.container_log_group_arns
+}
+
+data "aws_eks_addon_version" "cloudwatch_observability" {
+  addon_name         = "amazon-cloudwatch-observability"
+  kubernetes_version = module.eks.cluster_version
+  most_recent        = true
+}
+
+resource "aws_eks_addon" "cloudwatch_observability" {
+  cluster_name                = module.eks.cluster_name
+  addon_name                  = "amazon-cloudwatch-observability"
+  addon_version               = data.aws_eks_addon_version.cloudwatch_observability.version
+  service_account_role_arn    = module.cloudwatch_irsa.iam_role_arn
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  # After the nodes (it runs a DaemonSet) and after its log groups exist.
+  depends_on = [module.eks, terraform_data.log_groups_ready]
+}
 
 resource "helm_release" "aws_load_balancer_controller" {
   name       = "aws-load-balancer-controller"
