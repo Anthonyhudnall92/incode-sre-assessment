@@ -16,8 +16,9 @@ B="ContextKeyName=iam:PermissionsBoundary,ContextKeyValues=${BOUNDARY},ContextKe
 PASS=0; FAIL=0
 
 sim() { # role expected action resource context description
-  local ctx=()
-  [[ -n "$5" ]] && ctx=(--context-entries "$5")
+  local ctx=() entries=()
+  # Several context entries may be given, separated by spaces.
+  [[ -n "$5" ]] && read -ra entries <<<"$5" && ctx=(--context-entries "${entries[@]}")
   local got
   got=$(aws iam simulate-principal-policy --policy-source-arn "$1" --action-names "$3" \
     --resource-arns "$4" ${ctx[@]+"${ctx[@]}"} --query 'EvaluationResults[0].EvalDecision' --output text 2>&1)
@@ -53,6 +54,17 @@ sim "$PLAN"  denied  ec2:CreateVpc "*" "" "write anything"
 sim "$PLAN"  denied  s3:PutObject "${BUCKET}/sre-demo/main.tfstate" "" "overwrite state"
 sim "$PLAN"  allowed s3:PutObject "${BUCKET}/sre-demo/main.tfstate.tflock" "" "take the state lock"
 sim "$PLAN"  denied  secretsmanager:GetSecretValue "arn:aws:secretsmanager:us-east-1:${ACCT}:secret:rds!x" "" "read the DB password"
+R="ContextKeyName=aws:RequestedRegion,ContextKeyValues=us-east-1,ContextKeyType=string"
+T="ContextKeyName=aws:RequestTag/Stack,ContextKeyValues=main,ContextKeyType=string"
+RT="ContextKeyName=aws:ResourceTag/Stack,ContextKeyValues=main,ContextKeyType=string"
+sim "$APPLY" allowed ec2:CreateLaunchTemplateVersion "arn:aws:ec2:us-east-1:${ACCT}:launch-template/lt-x" "$R" "node group update: new launch template version"
+sim "$APPLY" allowed eks:UpdateNodegroupVersion "arn:aws:eks:us-east-1:${ACCT}:nodegroup/sre-demo/x/y" "" "node group update: roll the nodes"
+TYPE="ContextKeyName=ec2:InstanceType,ContextKeyValues=t3.micro,ContextKeyType=string"
+BIG="ContextKeyName=ec2:InstanceType,ContextKeyValues=m5.24xlarge,ContextKeyType=string"
+sim "$APPLY" allowed ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "$T $TYPE" "launch the stack-tagged t3.micro jump host"
+sim "$APPLY" denied  ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "$T $BIG" "launch a big instance, even tagged"
+sim "$APPLY" denied  ec2:RunInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/*" "" "launch an untagged instance"
+sim "$APPLY" allowed ec2:MonitorInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/i-x" "$RT" "detailed monitoring on stack instances"
 
 echo "passed: $PASS  failed: $FAIL"
 [[ $FAIL -eq 0 ]]

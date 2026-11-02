@@ -297,6 +297,9 @@ data "aws_iam_policy_document" "github_apply_core" {
       "ec2:ReplaceNetworkAclAssociation",
       "ec2:*FlowLogs",
       "ec2:*LaunchTemplate",
+      # Singular and plural are different actions: CreateLaunchTemplateVersion
+      # (node group updates) vs Delete/DescribeLaunchTemplateVersions.
+      "ec2:CreateLaunchTemplateVersion",
       "ec2:*LaunchTemplateVersions",
       "ec2:DeleteNetworkInterface",
       "ec2:EnableEbsEncryptionByDefault",
