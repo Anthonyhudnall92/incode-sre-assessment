@@ -267,7 +267,8 @@ data "aws_iam_policy_document" "github_apply_core" {
   }
 
   # EC2 has little resource-level scoping for networking; limit by action
-  # family and region instead. No RunInstances: EKS launches the nodes.
+  # family and region instead. EKS launches the nodes; the only instance CI
+  # launches is the jump host (LaunchJumpHost).
   statement {
     sid = "Networking"
     actions = [
@@ -308,6 +309,67 @@ data "aws_iam_policy_document" "github_apply_core" {
       variable = "aws:RequestedRegion"
       values   = [var.region]
     }
+  }
+
+  # The SSM jump host for the private EKS API: one small instance, tagged as
+  # this stack. The other RunInstances resources (subnet, security group,
+  # image, ...) are only referenced, so they cannot be narrowed further.
+  statement {
+    sid       = "LaunchJumpHost"
+    actions   = ["ec2:RunInstances"]
+    resources = ["${local.arn_prefix}:ec2:${var.region}:${local.account_id}:instance/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:InstanceType"
+      values   = ["t3.micro"]
+    }
+  }
+
+  statement {
+    sid     = "LaunchJumpHostResources"
+    actions = ["ec2:RunInstances"]
+    resources = [
+      "${local.arn_prefix}:ec2:${var.region}:${local.account_id}:subnet/*",
+      "${local.arn_prefix}:ec2:${var.region}:${local.account_id}:security-group/*",
+      "${local.arn_prefix}:ec2:${var.region}:${local.account_id}:network-interface/*",
+      "${local.arn_prefix}:ec2:${var.region}:${local.account_id}:volume/*",
+      "${local.arn_prefix}:ec2:${var.region}::image/*",
+    ]
+  }
+
+  statement {
+    sid = "ManageStackInstances"
+    actions = [
+      "ec2:TerminateInstances",
+      "ec2:StopInstances",
+      "ec2:StartInstances",
+      "ec2:ModifyInstanceAttribute",
+      "ec2:ModifyInstanceMetadataOptions",
+      "ec2:AssociateIamInstanceProfile",
+      "ec2:ReplaceIamInstanceProfileAssociation",
+      "ec2:DisassociateIamInstanceProfile",
+    ]
+    resources = ["${local.arn_prefix}:ec2:${var.region}:${local.account_id}:instance/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+  }
+
+  # The jump host's AMI comes from AWS's public parameter.
+  statement {
+    sid       = "PublicAmiParameters"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters"]
+    resources = ["${local.arn_prefix}:ssm:${var.region}::parameter/aws/service/*"]
   }
 
   statement {
@@ -373,6 +435,19 @@ data "aws_iam_policy_document" "github_apply_iam" {
       "iam:UntagPolicy",
     ]
     resources = ["${local.arn_prefix}:iam::${local.account_id}:policy/${local.stack}-*"]
+  }
+
+  statement {
+    sid = "ManageStackInstanceProfiles"
+    actions = [
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
+    ]
+    resources = ["${local.arn_prefix}:iam::${local.account_id}:instance-profile/${local.stack}-*"]
   }
 
   statement {
