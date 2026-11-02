@@ -43,7 +43,8 @@ flowchart LR
   pods -->|443 via NAT| nat
   cw --> cwl[CloudWatch Logs / Metrics]
   cwl --> alarms[Alarms] --> sns[SNS alerts]
-  admin((Admin /32)) -->|kubectl / terraform| api[EKS API<br/>public, CIDR-restricted]
+  admin((Admin)) -->|SSM port forward| jump[SSM jump host<br/>no inbound, no public IP]
+  jump -->|443| api[EKS API<br/>private endpoint only]
   gh[GitHub main] -->|pulls chart + digest| argo
   argo -->|syncs| pods
   argo -->|syncs| lbc
@@ -69,7 +70,7 @@ terraform/
     database/              RDS, parameter group (force_ssl), SG, KMS, enhanced monitoring
     app-platform/          ECR, app and ExternalDNS IRSA roles, WAF, ACM certificate
     observability/         SNS, log metric filters, alarms, dashboard
-addons/                    Argo CD, and the Applications it keeps in sync (needs EKS API access)
+addons/                    Argo CD, and the Applications it keeps in sync (runs through make tunnel)
 deploy/charts/uptime/      The app's Helm chart; values.yaml pins the image digest
 app/                       Python API, Dockerfile, unit tests
 scripts/                   release.sh, destroy.sh, ci/ (plan/apply helpers)
@@ -90,7 +91,7 @@ target account.
 
 ```bash
 cp terraform/terraform.tfvars.example terraform/terraform.tfvars
-# set admin_cidrs to your IP:  curl -s https://checkip.amazonaws.com
+# set admin_cidrs to your IP (used only for break-glass):  curl -s https://checkip.amazonaws.com
 # optional: domain_name + route53_zone_id for HTTPS, alert_email for notifications
 ```
 
@@ -103,7 +104,9 @@ make bootstrap        # creates the bucket + key, writes terraform/backend.hcl
 ### 3. Build everything
 
 ```bash
-make up               # init → plan → apply → addons (Argo CD + its apps)
+make up               # init → plan → apply (VPC, EKS, RDS, jump host, ...)
+make tunnel           # in another terminal, and leave it running: the EKS API is private
+make addons           # Argo CD + its apps, through the tunnel
 make release          # build, scan and push the image; pins its digest in the chart
 git commit -am "..." && open a PR, merge it   # Argo CD deploys it from main
 ```
@@ -115,7 +118,7 @@ ExternalDNS points it at the ALB within a minute or two of the Ingress getting o
 ```bash
 curl https://<domain>/          # {"message": "...", "pod": "uptime-...", "visits": 3}
 make status                     # Argo CD apps, pods, ingress, network policies, dashboard link
-make argocd                     # Argo CD UI on https://localhost:8443 (port-forward only)
+make argocd                     # Argo CD UI on https://localhost:8080 (port-forward only)
 ```
 
 ### 4. Tear down when not in use
@@ -141,7 +144,7 @@ Destroying the cluster first would orphan the ALB and its security groups and bl
 | **IAM: IRSA, no static credentials** | All workloads use IRSA. No access keys anywhere; nodes use SSM, not SSH keys. EKS access entries (`authentication_mode = "API"`), no `aws-auth` ConfigMap. | `eks-cluster`, `k8s/10-serviceaccount.yaml` |
 | **Network: private nodes and RDS** | Nodes in private subnets, RDS in database subnets with **no** internet or NAT route, `publicly_accessible = false`, no public IPs on launch. | `network`, `database` |
 | **Network: SGs allow only required traffic** | RDS SG: only 5432 from the node SG, no egress rules. Default VPC SG stripped of all rules. ALB → pod rules managed by the controller. | `database`, `network` |
-| **Network: restricted EKS API** | Private endpoint on; public endpoint limited to `admin_cidrs` (validated, `0.0.0.0/0` rejected). | `eks-cluster`, `variables.tf` |
+| **Network: private EKS API** | Private endpoint only. Admins use `make tunnel`: an SSM port-forward through a jump host with no inbound rules, no public IP and no Kubernetes access of its own, so `kubectl` still authenticates as the admin's IAM identity. Break-glass `eks_public_access` reopens the public endpoint to `admin_cidrs` only (validated, `0.0.0.0/0` rejected). | `jump-host`, `eks-cluster`, `variables.tf` |
 | **Encryption at rest: RDS** | `storage_encrypted` with a customer-managed, rotating KMS key. | `database` |
 | **Encryption at rest: EBS** | Node volumes `encrypted = true`, plus account-level `aws_ebs_encryption_by_default`. | `eks-cluster`, `main.tf` |
 | **Encryption at rest: Kubernetes Secrets** | EKS envelope encryption with a dedicated, rotating KMS key. | `eks-cluster` |
@@ -216,7 +219,7 @@ works in **GovCloud** (`aws-us-gov`).
 
 | Exception | Why | Production answer |
 |---|---|---|
-| Public EKS endpoint (CIDR-restricted) | Lets Terraform and kubectl run from a workstation without a VPN or bastion | Private endpoint only; access via SSM bastion, VPN or a CI runner inside the VPC |
+| Jump host egress to SSM over the NAT | Avoids three SSM interface endpoints (~$22/month per AZ) | `ssm`, `ssmmessages` and `ec2messages` VPC endpoints, and drop the jump host's internet egress |
 | x86 (`t3.medium`, `db.t3.micro`) instead of Graviton | The provided account's SCP (`DenyExpensiveEC2InstanceTypes`) denies all Graviton types and anything above `t3.medium` | `t4g.medium` + `node_ami_type = "AL2023_ARM_64_STANDARD"` + `IMAGE_PLATFORM=linux/arm64`, `db.t4g.micro`: ~20% cheaper, no code change beyond variables |
 | Single NAT gateway | About $33/month per extra NAT | `single_nat_gateway = false` (one per AZ) |
 | RDS single-AZ, no deletion protection, no final snapshot | Cost and one-command teardown | `db_multi_az = true`, `db_deletion_protection = true` |

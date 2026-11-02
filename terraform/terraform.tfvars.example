@@ -2,9 +2,11 @@
 
 region = "us-east-1"
 
-# Your public IP as a /32 — the only network allowed to reach the EKS API.
+# The EKS API is private (reach it with `make tunnel`). Break-glass only:
+# eks_public_access = true opens the public endpoint to these CIDRs.
 #   curl -s https://checkip.amazonaws.com
 admin_cidrs = ["203.0.113.10/32"]
+# eks_public_access = true
 
 # Who gets cluster-admin (kubectl) and administers the cluster's KMS key.
 #   aws sts get-caller-identity --query Arn --output text

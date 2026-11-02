@@ -52,9 +52,9 @@ variable "single_nat_gateway" {
 # --- EKS -----------------------------------------------------------------------
 
 variable "eks_public_access" {
-  description = "Break-glass: open the public EKS API endpoint to admin_cidrs. Normally false; the API is reached through the SSM jump host."
+  description = "Break-glass: open the public EKS API endpoint to admin_cidrs. Normally false; the API is reached through the SSM jump host (make tunnel)."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "admin_cidrs" {
