@@ -11,6 +11,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="$ROOT/terraform"
 RENDER_DIR="$ROOT/rendered" # gitignored
+# Repo-local kubeconfig: never touch the global one (and its current context).
+export KUBECONFIG="$ROOT/.kube/config"
 
 for bin in terraform aws docker kubectl jq envsubst; do # envsubst: brew install gettext
   command -v "$bin" >/dev/null || { echo "missing dependency: $bin" >&2; exit 1; }
@@ -39,17 +41,24 @@ DOMAIN="$(out domain_name)"
 ZONE_ID="$(out route53_zone_id)"
 
 echo "==> Configuring kubectl for $CLUSTER"
-aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER" >/dev/null
+aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER" --kubeconfig "$KUBECONFIG" >/dev/null
 
 # --- Image ------------------------------------------------------------------------
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  TAG="${TAG:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)-$(date -u +%Y%m%d%H%M%S)}"
+  # <YYYYMMDD>-<git short sha> (CONTRIBUTING.md). Tags are immutable in ECR,
+  # so an existing tag is reused rather than rebuilt.
+  TAG="${TAG:-$(date -u +%Y%m%d)-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)}"
   PLATFORM="${IMAGE_PLATFORM:-linux/amd64}" # must match node_ami_type
-  echo "==> Building $REPO_URL:$TAG ($PLATFORM)"
-  aws ecr get-login-password --region "$AWS_REGION" \
-    | docker login --username AWS --password-stdin "$REGISTRY" >/dev/null
-  docker buildx build --platform "$PLATFORM" --provenance=false \
-    -t "$REPO_URL:$TAG" --push "$ROOT/app"
+  if aws ecr describe-images --region "$AWS_REGION" --repository-name "$REPO_NAME" \
+      --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+    echo "==> $REPO_URL:$TAG already exists; reusing it"
+  else
+    echo "==> Building $REPO_URL:$TAG ($PLATFORM)"
+    aws ecr get-login-password --region "$AWS_REGION" \
+      | docker login --username AWS --password-stdin "$REGISTRY" >/dev/null
+    docker buildx build --platform "$PLATFORM" --provenance=false \
+      -t "$REPO_URL:$TAG" --push "$ROOT/app"
+  fi
 
   echo "==> Waiting for ECR scan"
   aws ecr wait image-scan-complete --region "$AWS_REGION" \
