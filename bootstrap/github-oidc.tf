@@ -105,6 +105,26 @@ data "aws_iam_policy_document" "workload_boundary" {
     }
   }
 
+  # ExternalDNS keeps the app's record pointed at the current ALB. It may only
+  # change records in the app zone; listing zones cannot be scoped.
+  dynamic "statement" {
+    for_each = var.dns_zone_name == null ? [] : [1]
+    content {
+      sid       = "AppZoneRecords"
+      actions   = ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets", "route53:ListTagsForResource"]
+      resources = [local.zone_arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.dns_zone_name == null ? [] : [1]
+    content {
+      sid       = "ListZones"
+      actions   = ["route53:ListHostedZones", "route53:ListTagsForResources"]
+      resources = ["*"]
+    }
+  }
+
   statement {
     sid       = "NeverTheStateKey"
     effect    = "Deny"
