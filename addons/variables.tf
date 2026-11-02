@@ -9,6 +9,12 @@ variable "cluster_name" {
   default     = "sre-demo"
 }
 
+variable "api_server_url" {
+  description = "Where to reach the Kubernetes API, e.g. https://127.0.0.1:8443 through `make tunnel`. Defaults to the cluster endpoint (only reachable when the public endpoint is on)."
+  type        = string
+  default     = null
+}
+
 variable "state_bucket" {
   description = "Bucket holding the main stack's state. Defaults to the name bootstrap/ gives it."
   type        = string

@@ -15,12 +15,23 @@ module "eks" {
   subnet_ids               = var.private_subnet_ids
   control_plane_subnet_ids = var.private_subnet_ids
 
-  # API endpoint: private access for nodes, public access restricted to
-  # admin_cidrs only (workstation /32). Fully private would require a
-  # bastion/SSM or VPN to run Terraform and kubectl - see README.
+  # API endpoint: private, reached through the SSM jump host
+  # (api_client_security_groups). The public endpoint is break-glass only
+  # (endpoint_public_access), and then only from admin_cidrs.
   cluster_endpoint_private_access      = true
-  cluster_endpoint_public_access       = true
-  cluster_endpoint_public_access_cidrs = var.admin_cidrs
+  cluster_endpoint_public_access       = var.endpoint_public_access
+  cluster_endpoint_public_access_cidrs = var.endpoint_public_access ? var.admin_cidrs : null
+
+  cluster_security_group_additional_rules = {
+    for name, sg in var.api_client_security_groups : "api_from_${name}" => {
+      description              = "Kubernetes API from ${name}"
+      type                     = "ingress"
+      protocol                 = "tcp"
+      from_port                = 443
+      to_port                  = 443
+      source_security_group_id = sg
+    }
+  }
 
   # Access entries (no aws-auth ConfigMap). Admins are listed explicitly rather
   # than "whoever ran Terraform", so a CI apply cannot silently swap them.

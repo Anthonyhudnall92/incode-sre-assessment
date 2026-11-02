@@ -51,8 +51,14 @@ variable "single_nat_gateway" {
 
 # --- EKS -----------------------------------------------------------------------
 
+variable "eks_public_access" {
+  description = "Break-glass: open the public EKS API endpoint to admin_cidrs. Normally false; the API is reached through the SSM jump host."
+  type        = bool
+  default     = true
+}
+
 variable "admin_cidrs" {
-  description = "CIDRs allowed to reach the public EKS API endpoint (e.g. your workstation /32). Never 0.0.0.0/0."
+  description = "CIDRs allowed to reach the public EKS API endpoint when eks_public_access is on (e.g. your workstation /32). Never 0.0.0.0/0."
   type        = list(string)
 
   validation {

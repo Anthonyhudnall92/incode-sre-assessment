@@ -65,11 +65,15 @@ module "eks_cluster" {
 
   cluster_admins = var.cluster_admins
 
-  name                     = local.name
-  kubernetes_version       = var.kubernetes_version
-  vpc_id                   = module.network.vpc_id
-  private_subnet_ids       = module.network.private_subnet_ids
-  admin_cidrs              = var.admin_cidrs
+  name                   = local.name
+  kubernetes_version     = var.kubernetes_version
+  vpc_id                 = module.network.vpc_id
+  private_subnet_ids     = module.network.private_subnet_ids
+  admin_cidrs            = var.admin_cidrs
+  endpoint_public_access = var.eks_public_access
+  api_client_security_groups = {
+    jump_host = module.jump_host.security_group_id
+  }
   node_ami_type            = var.node_ami_type
   node_instance_types      = var.node_instance_types
   node_min_size            = var.node_min_size
@@ -97,6 +101,16 @@ module "database" {
   deletion_protection   = var.db_deletion_protection
   log_retention_days    = var.log_retention_days
   logs_kms_key_arn      = module.log_storage.kms_key_arn
+}
+
+module "jump_host" {
+  source = "./modules/jump-host"
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
+
+  name      = local.name
+  vpc_id    = module.network.vpc_id
+  subnet_id = module.network.private_subnet_ids[0]
 }
 
 module "app_platform" {

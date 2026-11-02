@@ -80,3 +80,12 @@ output "external_dns_role_arn" {
   description = "IAM role for ExternalDNS, or empty when no domain is configured."
   value       = module.app_platform.external_dns_role_arn
 }
+
+output "cluster_endpoint" {
+  description = "EKS API endpoint. Private by default: reach it with `make tunnel`."
+  value       = module.eks_cluster.cluster_endpoint
+}
+
+output "jump_host_instance_id" {
+  value = module.jump_host.instance_id
+}
