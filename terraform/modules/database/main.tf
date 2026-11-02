@@ -62,9 +62,13 @@ resource "aws_db_parameter_group" "this" {
   description = "${var.name} PostgreSQL parameters"
 
   # Reject any non-TLS client connection (encryption in transit).
+  # Static parameter: RDS records it as pending-reboot, so say so here or every
+  # plan shows a change. (It is already in effect: the instance was created
+  # with this parameter group.)
   parameter {
-    name  = "rds.force_ssl"
-    value = "1"
+    name         = "rds.force_ssl"
+    value        = "1"
+    apply_method = "pending-reboot"
   }
 
   parameter {
