@@ -4,7 +4,7 @@
 # GitHub issues each workflow run a short-lived OIDC token. AWS trusts that
 # issuer and exchanges the token for 1-hour credentials on one of two roles:
 #
-#   sre-demo-github-plan    read-only; only pull requests from this repository
+#   sre-demo-github-plan    read-only; pull requests and main in this repository
 #   sre-demo-github-apply   changes the main stack; only the approved subject
 #                           (the `production` environment once the repo is
 #                           public, `main` until then; see var.github_apply_subject)
@@ -17,6 +17,12 @@
 # -----------------------------------------------------------------------------
 
 locals {
+  # The start of every OIDC subject from this repository. With immutable
+  # subjects GitHub appends the owner and repository IDs to the names.
+  github_owner      = split("/", var.github_repository)[0]
+  github_repo_name  = split("/", var.github_repository)[1]
+  github_sub_prefix = var.github_repository_id == null ? "repo:${var.github_repository}" : "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo_name}@${var.github_repository_id}"
+
   account_id = data.aws_caller_identity.current.account_id
   partition  = data.aws_partition.current.partition
   arn_prefix = "arn:${local.partition}"
@@ -117,8 +123,13 @@ resource "aws_iam_policy" "workload_boundary" {
 
 data "aws_iam_policy_document" "github_trust" {
   for_each = {
-    plan  = "repo:${var.github_repository}:pull_request"
-    apply = "repo:${var.github_repository}:${var.github_apply_subject}"
+    # Pull requests, plus main: the apply workflow shows a read-only plan for
+    # review before the approval-gated apply job starts.
+    plan = [
+      "${local.github_sub_prefix}:pull_request",
+      "${local.github_sub_prefix}:ref:refs/heads/main",
+    ]
+    apply = ["${local.github_sub_prefix}:${var.github_apply_subject}"]
   }
 
   statement {
@@ -140,7 +151,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringEquals"
       variable = "${local.github_oidc_host}:sub"
-      values   = [each.value]
+      values   = each.value
     }
   }
 

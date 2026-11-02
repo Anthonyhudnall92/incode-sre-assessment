@@ -6,10 +6,6 @@ variable "kubernetes_version" {
   type = string
 }
 
-variable "region" {
-  type = string
-}
-
 variable "vpc_id" {
   type = string
 }
@@ -51,9 +47,6 @@ variable "node_imds_hop_limit" {
   type = number
 }
 
-variable "lb_controller_chart_version" {
-  type = string
-}
 
 variable "log_retention_days" {
   type = number
