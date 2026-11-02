@@ -89,3 +89,16 @@ output "cluster_endpoint" {
 output "jump_host_instance_id" {
   value = module.jump_host.instance_id
 }
+
+output "prometheus_remote_write_url" {
+  description = "Managed Prometheus remote-write endpoint (the ADOT collector writes here)."
+  value       = module.managed_prometheus.remote_write_url
+}
+
+output "prometheus_query_url" {
+  value = module.managed_prometheus.query_url
+}
+
+output "adot_collector_role_arn" {
+  value = module.managed_prometheus.collector_role_arn
+}

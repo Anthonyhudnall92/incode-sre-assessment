@@ -1,8 +1,9 @@
 # What Argo CD keeps in sync, and what each project is allowed to touch.
 #
-#   platform  kube-system only, from the two upstream chart repos
+#   platform  kube-system and observability, from the upstream chart repos
 #     aws-load-balancer-controller   ALBs for Ingresses
 #     external-dns                   the app's DNS record (when a domain is set)
+#     adot-collector                 app metrics to Managed Prometheus, traces to X-Ray
 #   apps      the app's namespace only, from this repository
 #     uptime                         deploy/charts/uptime on main
 #
@@ -65,9 +66,14 @@ locals {
       sourceRepos = [
         "https://aws.github.io/eks-charts",
         "https://kubernetes-sigs.github.io/external-dns/",
+        "https://open-telemetry.github.io/opentelemetry-helm-charts",
       ]
-      destinations = [{ server = local.in_cluster, namespace = "kube-system" }]
+      destinations = [
+        { server = local.in_cluster, namespace = "kube-system" },
+        { server = local.in_cluster, namespace = local.collector_ns },
+      ]
       clusterResourceWhitelist = [
+        { group = "", kind = "Namespace" },
         { group = "apiextensions.k8s.io", kind = "CustomResourceDefinition" },
         { group = "rbac.authorization.k8s.io", kind = "ClusterRole" },
         { group = "rbac.authorization.k8s.io", kind = "ClusterRoleBinding" },
@@ -153,6 +159,7 @@ locals {
         syncPolicy  = local.sync
       }
     },
+    local.collector_app,
     local.dns ? {
       external-dns = {
         namespace  = "argocd"

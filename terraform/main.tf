@@ -132,6 +132,14 @@ module "app_platform" {
   logs_kms_key_arn   = module.log_storage.kms_key_arn
 }
 
+module "managed_prometheus" {
+  source = "./modules/managed-prometheus"
+
+  name                     = local.name
+  oidc_provider_arn        = module.eks_cluster.oidc_provider_arn
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
+}
+
 module "observability" {
   source = "./modules/observability"
 

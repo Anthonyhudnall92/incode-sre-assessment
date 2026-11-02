@@ -45,6 +45,10 @@ jobs:
       - uses: terraform-linters/setup-tflint@v4
 
       - name: tflint
+        env:
+          # Authenticated plugin downloads: anonymous GitHub API calls from
+          # shared runners hit the rate limit and failed the job (#19).
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init
           tflint --recursive --format compact
