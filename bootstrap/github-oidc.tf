@@ -125,6 +125,33 @@ data "aws_iam_policy_document" "workload_boundary" {
     }
   }
 
+  # The Synthetics canary writes its run artifacts to its own bucket, and
+  # lists buckets to find it. No other bucket, so never the state bucket.
+  statement {
+    sid     = "CanaryArtifacts"
+    actions = ["s3:PutObject", "s3:GetObject", "s3:GetBucketLocation", "s3:ListBucket"]
+    resources = [
+      "${local.arn_prefix}:s3:::${local.stack}-canary-*",
+      "${local.arn_prefix}:s3:::${local.stack}-canary-*/*",
+    ]
+  }
+
+  statement {
+    sid       = "ListBuckets"
+    actions   = ["s3:ListAllMyBuckets"]
+    resources = ["*"]
+  }
+
+  # Managed Prometheus: the collector writes, Grafana reads.
+  statement {
+    sid = "ManagedPrometheus"
+    actions = [
+      "aps:RemoteWrite", "aps:QueryMetrics", "aps:GetSeries", "aps:GetLabels",
+      "aps:GetMetricMetadata", "aps:DescribeWorkspace", "aps:ListWorkspaces",
+    ]
+    resources = ["*"]
+  }
+
   statement {
     sid       = "NeverTheStateKey"
     effect    = "Deny"
@@ -501,6 +528,8 @@ data "aws_iam_policy_document" "github_apply_iam" {
         "ec2.amazonaws.com",
         "monitoring.rds.amazonaws.com",
         "vpc-flow-logs.amazonaws.com",
+        "lambda.amazonaws.com",
+        "grafana.amazonaws.com",
       ]
     }
   }
@@ -747,11 +776,121 @@ data "aws_iam_policy_document" "github_apply_services" {
   }
 }
 
+# Observability outside the cluster: the external Synthetics canary (which
+# Synthetics deploys as a Lambda function under the caller's permissions)
+# and Managed Prometheus. Scoped to this stack's names and tags.
+data "aws_iam_policy_document" "github_apply_observability" {
+  # Create actions are authorized against "*" (the resource does not exist
+  # yet), so they are scoped by the stack tag Terraform adds to everything.
+  statement {
+    sid       = "CreateTaggedCanaries"
+    actions   = ["synthetics:CreateCanary", "synthetics:TagResource"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+  }
+
+  statement {
+    sid       = "StackCanaries"
+    actions   = ["synthetics:*"]
+    resources = ["${local.arn_prefix}:synthetics:${var.region}:${local.account_id}:canary:${local.stack}-*"]
+  }
+
+  statement {
+    sid       = "ReadCanaries"
+    actions   = ["synthetics:Describe*", "synthetics:Get*", "synthetics:List*"]
+    resources = ["*"]
+  }
+
+  # Synthetics names the function and layer cwsyn-<canary>-<id>.
+  statement {
+    sid = "CanaryFunction"
+    actions = [
+      "lambda:CreateFunction", "lambda:DeleteFunction", "lambda:GetFunction",
+      "lambda:GetFunctionConfiguration", "lambda:UpdateFunctionCode",
+      "lambda:UpdateFunctionConfiguration", "lambda:PublishVersion",
+      "lambda:ListVersionsByFunction", "lambda:AddPermission", "lambda:RemovePermission",
+      "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags",
+      "lambda:PublishLayerVersion", "lambda:DeleteLayerVersion", "lambda:GetLayerVersion",
+    ]
+    resources = [
+      "${local.arn_prefix}:lambda:${var.region}:${local.account_id}:function:cwsyn-${local.stack}-*",
+      "${local.arn_prefix}:lambda:${var.region}:${local.account_id}:layer:cwsyn-${local.stack}-*",
+      "${local.arn_prefix}:lambda:${var.region}:${local.account_id}:layer:cwsyn-${local.stack}-*:*",
+    ]
+  }
+
+  # The Synthetics runtime layers are published by AWS accounts.
+  statement {
+    sid       = "SyntheticsRuntimeLayers"
+    actions   = ["lambda:GetLayerVersion"]
+    resources = ["${local.arn_prefix}:lambda:${var.region}:*:layer:*"]
+  }
+
+  # The canary's artifact bucket only (never the state bucket).
+  statement {
+    sid     = "CanaryBucket"
+    actions = ["s3:*"]
+    resources = [
+      "${local.arn_prefix}:s3:::${local.stack}-canary-*",
+      "${local.arn_prefix}:s3:::${local.stack}-canary-*/*",
+    ]
+  }
+
+  statement {
+    sid       = "ListBuckets"
+    actions   = ["s3:ListAllMyBuckets", "s3:GetBucketLocation"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "CreateTaggedPrometheus"
+    actions   = ["aps:CreateWorkspace", "aps:TagResource"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+  }
+
+  statement {
+    sid = "ManageStackPrometheus"
+    actions = [
+      "aps:DeleteWorkspace", "aps:UpdateWorkspaceAlias", "aps:UntagResource",
+      "aps:CreateLoggingConfiguration", "aps:UpdateLoggingConfiguration",
+      "aps:DeleteLoggingConfiguration",
+    ]
+    resources = ["${local.arn_prefix}:aps:${var.region}:${local.account_id}:workspace/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+  }
+
+  statement {
+    sid = "ReadPrometheus"
+    actions = [
+      "aps:DescribeWorkspace", "aps:ListWorkspaces", "aps:ListTagsForResource",
+      "aps:DescribeLoggingConfiguration",
+    ]
+    resources = ["*"]
+  }
+}
+
 resource "aws_iam_policy" "github_apply" {
   for_each = {
-    core     = data.aws_iam_policy_document.github_apply_core.json
-    iam      = data.aws_iam_policy_document.github_apply_iam.json
-    services = data.aws_iam_policy_document.github_apply_services.json
+    core          = data.aws_iam_policy_document.github_apply_core.json
+    iam           = data.aws_iam_policy_document.github_apply_iam.json
+    services      = data.aws_iam_policy_document.github_apply_services.json
+    observability = data.aws_iam_policy_document.github_apply_observability.json
   }
 
   name        = "${local.stack}-github-apply-${each.key}"
