@@ -6,5 +6,10 @@
 # Repository whose workflows may assume the CI roles.
 github_repository = "your-user/your-repo"
 
+# If the repository uses immutable OIDC subjects (check with
+# `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`), add its IDs:
+# github_owner_id      = 12345678
+# github_repository_id = 123456789
+
 # Until the repository is public (no GitHub environments on free private repos):
 # github_apply_subject = "ref:refs/heads/main"

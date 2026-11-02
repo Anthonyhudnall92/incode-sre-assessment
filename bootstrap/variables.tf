@@ -32,8 +32,25 @@ variable "github_repository" {
   }
 }
 
+variable "github_owner_id" {
+  description = "Numeric ID of the repository owner. Set it with github_repository_id when the repository uses GitHub's immutable OIDC subjects (repo:owner@<id>/name@<id>), so a deleted and recreated repository of the same name cannot assume the CI roles."
+  type        = number
+  default     = null
+}
+
+variable "github_repository_id" {
+  description = "Numeric ID of the repository. See github_owner_id."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = (var.github_repository_id == null) == (var.github_owner_id == null)
+    error_message = "Set github_owner_id and github_repository_id together, or neither."
+  }
+}
+
 variable "github_apply_subject" {
-  description = "OIDC subject (after repo:<owner>/<name>:) allowed to assume the apply role. \"environment:production\" requires a GitHub environment, which private repositories only get on paid plans; use \"ref:refs/heads/main\" until the repository is public."
+  description = "OIDC subject (after the repo:<owner>/<name>: prefix) allowed to assume the apply role. \"environment:production\" requires a GitHub environment, which private repositories only get on paid plans; use \"ref:refs/heads/main\" until the repository is public."
   type        = string
   default     = "environment:production"
 }

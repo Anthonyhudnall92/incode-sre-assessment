@@ -17,6 +17,12 @@
 # -----------------------------------------------------------------------------
 
 locals {
+  # The start of every OIDC subject from this repository. With immutable
+  # subjects GitHub appends the owner and repository IDs to the names.
+  github_owner      = split("/", var.github_repository)[0]
+  github_repo_name  = split("/", var.github_repository)[1]
+  github_sub_prefix = var.github_repository_id == null ? "repo:${var.github_repository}" : "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo_name}@${var.github_repository_id}"
+
   account_id = data.aws_caller_identity.current.account_id
   partition  = data.aws_partition.current.partition
   arn_prefix = "arn:${local.partition}"
@@ -120,10 +126,10 @@ data "aws_iam_policy_document" "github_trust" {
     # Pull requests, plus main: the apply workflow shows a read-only plan for
     # review before the approval-gated apply job starts.
     plan = [
-      "repo:${var.github_repository}:pull_request",
-      "repo:${var.github_repository}:ref:refs/heads/main",
+      "${local.github_sub_prefix}:pull_request",
+      "${local.github_sub_prefix}:ref:refs/heads/main",
     ]
-    apply = ["repo:${var.github_repository}:${var.github_apply_subject}"]
+    apply = ["${local.github_sub_prefix}:${var.github_apply_subject}"]
   }
 
   statement {
