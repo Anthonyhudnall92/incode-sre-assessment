@@ -47,3 +47,7 @@ venv/
 .idea/
 .vscode/
 *.swp
+.image-backup/
+
+# Local notes with real URLs and IDs (this repository is public)
+private/

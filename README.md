@@ -94,14 +94,19 @@ addons/                    Argo CD and its Applications (LB controller, External
 addons/dashboards/         Grafana dashboards as JSON
 deploy/charts/uptime/      The app's Helm chart; values.yaml pins the image digest
 app/                       Python status board, SSRF-safe checker, static UI, unit tests
-scripts/                   release.sh, tunnel.sh, destroy.sh, check-ci-permissions.sh, ci/
+scripts/                   release.sh, image.sh, tunnel.sh, destroy.sh, check-ci-permissions.sh, ci/
 docs/runbook.md            What each alarm means and what to do about it
+docs/reviewers.md          For reviewers: requirements → evidence, what to check, trade-offs
+docs/standup.md            Every command, from an empty account to a verified stack and back
 .github/workflows/         ci (lint, scan, test), terraform-plan (PRs), terraform-apply (main, approval-gated)
 ```
 
 ---
 
 ## Running it
+
+The short version is below; [`docs/standup.md`](docs/standup.md) has every command, timings
+and troubleshooting. Reviewers: start at [`docs/reviewers.md`](docs/reviewers.md).
 
 ### Prerequisites
 
