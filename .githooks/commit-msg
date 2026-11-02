@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Enforce the commit format in CONTRIBUTING.md:
+#   YYYY-MM-DD: <purpose>      (72 chars max)
+#   <blank line>
+#   <why>                      (required)
+set -euo pipefail
+
+MSG_FILE="$1"
+# Ignore comment lines git adds to the editor template.
+SUBJECT="$(grep -v '^#' "$MSG_FILE" | sed -n '1p')"
+BODY="$(grep -v '^#' "$MSG_FILE" | sed -n '3,$p' | grep -v '^[[:space:]]*$' | grep -v -E '^[A-Za-z-]+: .+' || true)"
+
+# Git's own generated messages pass through untouched.
+if [[ "$SUBJECT" =~ ^(Merge|Revert|fixup!|squash!|amend!) ]]; then
+  exit 0
+fi
+
+fail() {
+  echo "commit-msg: $1" >&2
+  echo "  expected: YYYY-MM-DD: <purpose>, a blank line, then why (see CONTRIBUTING.md)" >&2
+  exit 1
+}
+
+[[ "$SUBJECT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}:\ [^[:space:]] ]] \
+  || fail "subject must start with the date, e.g. '$(date +%F): Add OIDC roles for CI'"
+date -j -f "%Y-%m-%d" "${SUBJECT:0:10}" >/dev/null 2>&1 \
+  || date -d "${SUBJECT:0:10}" >/dev/null 2>&1 \
+  || fail "'${SUBJECT:0:10}' is not a real date"
+(( ${#SUBJECT} <= 72 )) || fail "subject is ${#SUBJECT} characters; keep it to 72"
+[[ -n "$BODY" ]] || fail "add a body explaining why (trailers like Co-Authored-By don't count)"
