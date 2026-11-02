@@ -102,3 +102,8 @@ output "prometheus_query_url" {
 output "adot_collector_role_arn" {
   value = module.managed_prometheus.collector_role_arn
 }
+
+output "grafana_role_arn" {
+  description = "Read-only role for the in-cluster Grafana (addons/)."
+  value       = module.managed_prometheus.grafana_role_arn
+}

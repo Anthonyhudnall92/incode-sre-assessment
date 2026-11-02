@@ -1,0 +1,3 @@
+# Reviewed false positives. Format: <commit>:<file>:<rule>:<line>
+# 0f9a0d9: passwordKey = "admin-password" names a key in a Kubernetes Secret; not a secret.
+0f9a0d9bfa79f2bf16e4479bffa69db41c596067:addons/grafana.tf:hashicorp-tf-password:29

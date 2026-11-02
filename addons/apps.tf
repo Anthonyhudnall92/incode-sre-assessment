@@ -4,6 +4,7 @@
 #     aws-load-balancer-controller   ALBs for Ingresses
 #     external-dns                   the app's DNS record (when a domain is set)
 #     adot-collector                 app metrics to Managed Prometheus, traces to X-Ray
+#     grafana                        dashboards over Managed Prometheus and CloudWatch
 #   apps      the app's namespace only, from this repository
 #     uptime                         deploy/charts/uptime on main
 #
@@ -67,6 +68,7 @@ locals {
         "https://aws.github.io/eks-charts",
         "https://kubernetes-sigs.github.io/external-dns/",
         "https://open-telemetry.github.io/opentelemetry-helm-charts",
+        "https://grafana-community.github.io/helm-charts",
       ]
       destinations = [
         { server = local.in_cluster, namespace = "kube-system" },
@@ -160,6 +162,7 @@ locals {
       }
     },
     local.collector_app,
+    local.grafana_app,
     local.dns ? {
       external-dns = {
         namespace  = "argocd"
