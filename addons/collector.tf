@@ -55,7 +55,7 @@ locals {
     exporters = {
       debug = null
       prometheusremotewrite = {
-        endpoint                         = local.main.prometheus_remote_write_url
+        endpoint                         = local.prometheus_remote_write_url
         auth                             = { authenticator = "sigv4auth" }
         resource_to_telemetry_conversion = { enabled = true }
       }
