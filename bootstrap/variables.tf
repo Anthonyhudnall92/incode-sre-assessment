@@ -60,3 +60,9 @@ variable "ci_role_test_principals" {
   type        = list(string)
   default     = []
 }
+
+variable "node_instance_types" {
+  description = "Instance types the main stack's node group uses (terraform/ var.node_instance_types). CI may launch only these, and only from the stack's launch templates."
+  type        = list(string)
+  default     = ["t3.medium"]
+}
