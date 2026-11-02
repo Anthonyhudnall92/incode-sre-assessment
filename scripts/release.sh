@@ -42,12 +42,21 @@ else
     -t "$REPO_URL:$TAG" --push "$ROOT/app"
 fi
 
-echo "==> Waiting for ECR scan"
-aws ecr wait image-scan-complete --region "$AWS_REGION" \
-  --repository-name "$REPO_NAME" --image-id imageTag="$TAG"
+# Basic scanning reports COMPLETE. Enhanced scanning (Amazon Inspector, if the
+# account has it on) reports ACTIVE and can take a few minutes to appear.
+echo "==> Waiting for the image scan"
+for _ in $(seq 1 45); do
+  STATUS="$(aws ecr describe-image-scan-findings --region "$AWS_REGION" \
+    --repository-name "$REPO_NAME" --image-id imageTag="$TAG" \
+    --max-results 1 --no-paginate --query 'imageScanStatus.status' --output text 2>/dev/null || true)"
+  [[ "$STATUS" == COMPLETE || "$STATUS" == ACTIVE ]] && break
+  [[ "$STATUS" == FAILED ]] && { echo "image scan failed" >&2; exit 1; }
+  sleep 20
+done
+[[ "$STATUS" == COMPLETE || "$STATUS" == ACTIVE ]] || { echo "image scan did not finish in 15 minutes" >&2; exit 1; }
 CRITICAL="$(aws ecr describe-image-scan-findings --region "$AWS_REGION" \
   --repository-name "$REPO_NAME" --image-id imageTag="$TAG" \
-  --query 'imageScanFindings.findingSeverityCounts.CRITICAL' --output text)"
+  --max-results 1 --no-paginate --query 'imageScanFindings.findingSeverityCounts.CRITICAL' --output text)"
 if [[ "$CRITICAL" != "None" && "$CRITICAL" != "0" && "${ALLOW_CRITICAL:-0}" != "1" ]]; then
   echo "ECR scan found $CRITICAL CRITICAL vulnerabilities; not pinning it (ALLOW_CRITICAL=1 to override)" >&2
   exit 1
