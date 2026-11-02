@@ -122,6 +122,7 @@ ExternalDNS points it at the ALB within a minute or two of the Ingress getting o
 open https://<domain>/          # the status board: add a site, watch its signal strip fill in
 make status                     # Argo CD apps, pods, ingress, network policies, dashboard link
 make argocd                     # Argo CD UI on https://localhost:8080 (port-forward only)
+make argocd-password            # its admin password, read from Secrets Manager
 ```
 
 ### 4. Tear down when not in use

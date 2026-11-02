@@ -40,12 +40,15 @@ reverted within minutes (self-heal), so fix things in git.
 ```bash
 kubectl -n argocd get applications      # SYNC STATUS should be Synced, HEALTH Healthy
 make argocd                             # UI on https://localhost:8080, user admin
+make argocd-password                    # the admin password, from Secrets Manager
 ```
 
 - **OutOfSync that will not clear:** open the app in the UI and look at the diff. A sync error
   (for example a value the chart rejects) is shown under the app's conditions.
 - **Roll back a release:** revert the PR that changed the image digest. Argo CD rolls back to the
   previous digest. Do not use the UI's rollback; self-heal would undo it.
+- **Rotate the admin password:** `terraform -chdir=addons apply -replace=random_password.argocd_admin`
+  (through `make tunnel`). The new one goes to Secrets Manager and Argo CD gets only its hash.
 - **Emergency pause:** `kubectl -n argocd patch application uptime --type merge -p
   '{"spec":{"syncPolicy":{"automated":null}}}'` stops automatic syncs until `make addons` restores
   them.
