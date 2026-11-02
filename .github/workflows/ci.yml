@@ -79,6 +79,9 @@ jobs:
         with:
           directory: .
           config_file: .checkov.yaml
+          # Console output only. The default (SARIF) writes results.sarif as
+          # root, which the gitleaks step then cannot overwrite.
+          output_format: cli
 
       - name: gitleaks (no secrets in history)
         uses: gitleaks/gitleaks-action@v2
