@@ -75,3 +75,8 @@ output "alerts_topic_arn" {
 output "dashboard_url" {
   value = module.observability.dashboard_url
 }
+
+output "external_dns_role_arn" {
+  description = "IAM role for ExternalDNS, or empty when no domain is configured."
+  value       = module.app_platform.external_dns_role_arn
+}
