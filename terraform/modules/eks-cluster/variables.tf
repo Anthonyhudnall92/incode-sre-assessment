@@ -77,3 +77,9 @@ variable "api_client_security_groups" {
   type        = map(string)
   default     = {}
 }
+
+variable "node_max_pods" {
+  description = "Pods per node. 110 needs VPC CNI prefix delegation (on); without it a t3.medium holds 17."
+  type        = number
+  default     = 110
+}
