@@ -2,3 +2,9 @@
 
 # Optional: subdomain to delegate to Route 53 for the app's HTTPS certificate.
 # dns_zone_name = "incode.example.com"
+
+# Repository whose workflows may assume the CI roles.
+github_repository = "your-user/your-repo"
+
+# Until the repository is public (no GitHub environments on free private repos):
+# github_apply_subject = "ref:refs/heads/main"

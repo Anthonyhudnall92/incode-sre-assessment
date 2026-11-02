@@ -1,0 +1,623 @@
+# -----------------------------------------------------------------------------
+# GitHub Actions -> AWS, with no stored credentials
+#
+# GitHub issues each workflow run a short-lived OIDC token. AWS trusts that
+# issuer and exchanges the token for 1-hour credentials on one of two roles:
+#
+#   sre-demo-github-plan    read-only; only pull requests from this repository
+#   sre-demo-github-apply   changes the main stack; only the approved subject
+#                           (the `production` environment once the repo is
+#                           public, `main` until then; see var.github_apply_subject)
+#
+# The apply role is scoped to the services and resource names the main stack
+# uses. Every role it creates must carry sre-demo-workload-boundary, so it
+# cannot mint a role more powerful than the workloads need. It cannot touch
+# this bootstrap layer: the state bucket and key, the DNS zone, the boundary,
+# or these CI roles.
+# -----------------------------------------------------------------------------
+
+locals {
+  account_id = data.aws_caller_identity.current.account_id
+  partition  = data.aws_partition.current.partition
+  arn_prefix = "arn:${local.partition}"
+
+  # Main-stack name and the tag that marks its resources (terraform/main.tf).
+  stack = var.project
+  stack_tag = {
+    key   = "Stack"
+    value = "main"
+  }
+
+  github_oidc_host = "token.actions.githubusercontent.com"
+  boundary_arn     = "${local.arn_prefix}:iam::${local.account_id}:policy/${local.stack}-workload-boundary"
+  state_key        = "${var.project}/main.tfstate"
+  zone_arn         = "${local.arn_prefix}:route53:::hostedzone/${one(aws_route53_zone.app[*].zone_id)}"
+}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url            = "https://${local.github_oidc_host}"
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+# --- Permissions boundary for every role the main stack creates ----------------
+# The most any workload or controller role can ever do, whatever policies are
+# attached to it. No IAM writes (except service-linked roles the controllers
+# need), no S3, nothing on the state key.
+
+data "aws_iam_policy_document" "workload_boundary" {
+  statement {
+    sid = "WorkloadServices"
+    actions = [
+      "autoscaling:*",
+      "cloudwatch:*",
+      "ec2:*",
+      "ec2messages:*",
+      "ecr:*",
+      "eks:*",
+      "eks-auth:*",
+      "elasticloadbalancing:*",
+      "logs:*",
+      "shield:*",
+      "ssm:*",
+      "ssmmessages:*",
+      "tag:GetResources",
+      "tag:TagResources",
+      "tag:UntagResources",
+      "waf-regional:*",
+      "wafv2:*",
+      "xray:*",
+      "acm:DescribeCertificate",
+      "acm:GetCertificate",
+      "acm:ListCertificates",
+      "cognito-idp:DescribeUserPoolClient",
+      "iam:GetServerCertificate",
+      "iam:ListServerCertificates",
+      "kms:CreateGrant",
+      "kms:Decrypt",
+      "kms:DescribeKey",
+      "kms:Encrypt",
+      "kms:GenerateDataKey*",
+      "kms:ListGrants",
+      "kms:ReEncrypt*",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetSecretValue",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "LoadBalancerServiceLinkedRole"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values   = ["elasticloadbalancing.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid       = "NeverTheStateKey"
+    effect    = "Deny"
+    actions   = ["kms:*"]
+    resources = [aws_kms_key.state.arn]
+  }
+}
+
+resource "aws_iam_policy" "workload_boundary" {
+  name        = "${local.stack}-workload-boundary"
+  description = "Permissions boundary for every IAM role created by the ${local.stack} main stack"
+  policy      = data.aws_iam_policy_document.workload_boundary.json
+}
+
+# --- Trust policies ---------------------------------------------------------------
+
+data "aws_iam_policy_document" "github_trust" {
+  for_each = {
+    plan  = "repo:${var.github_repository}:pull_request"
+    apply = "repo:${var.github_repository}:${var.github_apply_subject}"
+  }
+
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.github.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.github_oidc_host}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    # Exact match on repository and trigger. No wildcards: a wildcard here is
+    # how other repositories (or forks) end up able to assume the role.
+    condition {
+      test     = "StringEquals"
+      variable = "${local.github_oidc_host}:sub"
+      values   = [each.value]
+    }
+  }
+
+  # Lets an operator assume the role locally to test its permissions. Empty
+  # by default; set ci_role_test_principals only while testing.
+  dynamic "statement" {
+    for_each = length(var.ci_role_test_principals) > 0 ? [1] : []
+
+    content {
+      sid     = "LocalPermissionTesting"
+      actions = ["sts:AssumeRole"]
+
+      principals {
+        type        = "AWS"
+        identifiers = var.ci_role_test_principals
+      }
+    }
+  }
+}
+
+# --- Plan role: read-only --------------------------------------------------------
+
+data "aws_iam_policy_document" "github_plan_state" {
+  statement {
+    sid       = "ReadState"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.state.arn}/${local.state_key}"]
+  }
+
+  statement {
+    sid       = "HoldTheLock"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.state.arn}/${local.state_key}.tflock"]
+  }
+
+  statement {
+    sid       = "ListStateBucket"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.state.arn]
+  }
+
+  statement {
+    sid       = "UseStateKey"
+    actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    resources = [aws_kms_key.state.arn]
+  }
+}
+
+resource "aws_iam_role" "github_plan" {
+  name                 = "${local.stack}-github-plan"
+  description          = "GitHub Actions: terraform plan on pull requests (read-only)"
+  assume_role_policy   = data.aws_iam_policy_document.github_trust["plan"].json
+  max_session_duration = 3600
+}
+
+resource "aws_iam_role_policy_attachment" "github_plan_read" {
+  role       = aws_iam_role.github_plan.name
+  policy_arn = "${local.arn_prefix}:iam::aws:policy/ReadOnlyAccess"
+}
+
+resource "aws_iam_role_policy" "github_plan_state" {
+  name   = "terraform-state"
+  role   = aws_iam_role.github_plan.id
+  policy = data.aws_iam_policy_document.github_plan_state.json
+}
+
+# --- Apply role: scoped writes ----------------------------------------------------
+# Split across three policies to stay under IAM's 6,144-character limit.
+
+data "aws_iam_policy_document" "github_apply_core" {
+  statement {
+    sid       = "StateObject"
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${aws_s3_bucket.state.arn}/${local.state_key}"]
+  }
+
+  statement {
+    sid       = "StateLock"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.state.arn}/${local.state_key}.tflock"]
+  }
+
+  statement {
+    sid       = "StateBucketList"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.state.arn]
+  }
+
+  statement {
+    sid       = "StateKey"
+    actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    resources = [aws_kms_key.state.arn]
+  }
+
+  # EC2 has little resource-level scoping for networking; limit by action
+  # family and region instead. No RunInstances: EKS launches the nodes.
+  statement {
+    sid = "Networking"
+    actions = [
+      "ec2:Describe*",
+      "ec2:Get*",
+      "ec2:CreateTags",
+      "ec2:DeleteTags",
+      "ec2:*Vpc",
+      "ec2:*VpcAttribute",
+      "ec2:*Subnet",
+      "ec2:ModifySubnetAttribute",
+      "ec2:*RouteTable",
+      "ec2:*Route",
+      "ec2:*InternetGateway",
+      "ec2:*NatGateway",
+      "ec2:AllocateAddress",
+      "ec2:ReleaseAddress",
+      "ec2:DisassociateAddress",
+      "ec2:*SecurityGroup",
+      "ec2:*SecurityGroupIngress",
+      "ec2:*SecurityGroupEgress",
+      "ec2:ModifySecurityGroupRules",
+      "ec2:UpdateSecurityGroupRuleDescriptions*",
+      "ec2:*NetworkAcl",
+      "ec2:*NetworkAclEntry",
+      "ec2:ReplaceNetworkAclAssociation",
+      "ec2:*FlowLogs",
+      "ec2:*LaunchTemplate",
+      "ec2:*LaunchTemplateVersions",
+      "ec2:DeleteNetworkInterface",
+      "ec2:EnableEbsEncryptionByDefault",
+      "ec2:DisableEbsEncryptionByDefault",
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.region]
+    }
+  }
+
+  statement {
+    sid     = "Cluster"
+    actions = ["eks:*"]
+    resources = [
+      "${local.arn_prefix}:eks:${var.region}:${local.account_id}:cluster/${local.stack}",
+      "${local.arn_prefix}:eks:${var.region}:${local.account_id}:nodegroup/${local.stack}/*",
+      "${local.arn_prefix}:eks:${var.region}:${local.account_id}:addon/${local.stack}/*",
+      "${local.arn_prefix}:eks:${var.region}:${local.account_id}:access-entry/${local.stack}/*",
+    ]
+  }
+
+  statement {
+    sid       = "ClusterRead"
+    actions   = ["eks:Describe*", "eks:List*"]
+    resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "github_apply_iam" {
+  # Roles can only be created, or given permissions, if they carry the boundary.
+  statement {
+    sid = "RolesMustCarryBoundary"
+    actions = [
+      "iam:CreateRole",
+      "iam:PutRolePermissionsBoundary",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+    ]
+    resources = ["${local.arn_prefix}:iam::${local.account_id}:role/${local.stack}-*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [local.boundary_arn]
+    }
+  }
+
+  statement {
+    sid = "ManageStackRoles"
+    actions = [
+      "iam:DeleteRole",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:UpdateRole",
+      "iam:UpdateRoleDescription",
+      "iam:UpdateAssumeRolePolicy",
+    ]
+    resources = ["${local.arn_prefix}:iam::${local.account_id}:role/${local.stack}-*"]
+  }
+
+  statement {
+    sid = "ManageStackPolicies"
+    actions = [
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+    ]
+    resources = ["${local.arn_prefix}:iam::${local.account_id}:policy/${local.stack}-*"]
+  }
+
+  statement {
+    sid       = "PassStackRoles"
+    actions   = ["iam:PassRole"]
+    resources = ["${local.arn_prefix}:iam::${local.account_id}:role/${local.stack}-*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values = [
+        "eks.amazonaws.com",
+        "ec2.amazonaws.com",
+        "monitoring.rds.amazonaws.com",
+        "vpc-flow-logs.amazonaws.com",
+      ]
+    }
+  }
+
+  statement {
+    sid = "ClusterOidcProvider"
+    actions = [
+      "iam:CreateOpenIDConnectProvider",
+      "iam:DeleteOpenIDConnectProvider",
+      "iam:TagOpenIDConnectProvider",
+      "iam:UntagOpenIDConnectProvider",
+      "iam:UpdateOpenIDConnectProviderThumbprint",
+    ]
+    resources = ["${local.arn_prefix}:iam::${local.account_id}:oidc-provider/oidc.eks.${var.region}.amazonaws.com/id/*"]
+  }
+
+  statement {
+    sid       = "ServiceLinkedRoles"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values = [
+        "eks.amazonaws.com",
+        "eks-nodegroup.amazonaws.com",
+        "autoscaling.amazonaws.com",
+        "rds.amazonaws.com",
+        "elasticloadbalancing.amazonaws.com",
+      ]
+    }
+  }
+
+  statement {
+    sid       = "IamRead"
+    actions   = ["iam:Get*", "iam:List*"]
+    resources = ["*"]
+  }
+
+  # Explicit denies win over every allow above.
+  statement {
+    sid    = "NeverTheCiOrBoundary"
+    effect = "Deny"
+    actions = [
+      "iam:Add*", "iam:Attach*", "iam:Create*", "iam:Delete*", "iam:Detach*",
+      "iam:PassRole", "iam:Put*", "iam:Remove*", "iam:Set*", "iam:Tag*",
+      "iam:Untag*", "iam:Update*",
+    ]
+    resources = [
+      "${local.arn_prefix}:iam::${local.account_id}:role/${local.stack}-github-*",
+      "${local.arn_prefix}:iam::${local.account_id}:policy/${local.stack}-workload-boundary",
+      aws_iam_openid_connect_provider.github.arn,
+    ]
+  }
+
+  statement {
+    sid       = "NeverRemoveABoundary"
+    effect    = "Deny"
+    actions   = ["iam:DeleteRolePermissionsBoundary"]
+    resources = ["*"]
+  }
+}
+
+data "aws_iam_policy_document" "github_apply_services" {
+  statement {
+    sid       = "CreateTaggedKeys"
+    actions   = ["kms:CreateKey"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+  }
+
+  # Not tag-scoped: a new tag can take up to 5 minutes to count for KMS
+  # authorization, and Terraform reads and configures a key straight after
+  # CreateKey. Region-wide instead, with the state key denied explicitly.
+  statement {
+    sid = "ManageKeys"
+    actions = [
+      # Alias calls are authorized against the key as well as the alias.
+      "kms:CreateAlias", "kms:DeleteAlias", "kms:UpdateAlias",
+      "kms:CancelKeyDeletion", "kms:CreateGrant", "kms:Decrypt", "kms:DescribeKey",
+      "kms:DisableKey", "kms:DisableKeyRotation", "kms:EnableKey", "kms:EnableKeyRotation",
+      "kms:Encrypt", "kms:GenerateDataKey*", "kms:GetKeyPolicy", "kms:GetKeyRotationStatus",
+      "kms:ListGrants", "kms:ListResourceTags", "kms:PutKeyPolicy", "kms:RetireGrant",
+      "kms:RevokeGrant", "kms:ScheduleKeyDeletion", "kms:TagResource", "kms:UntagResource",
+      "kms:UpdateKeyDescription",
+    ]
+    resources = ["${local.arn_prefix}:kms:${var.region}:${local.account_id}:key/*"]
+  }
+
+  # Only the four actions Terraform needs to read and write state.
+  statement {
+    sid         = "StateKeyOnlyForState"
+    effect      = "Deny"
+    not_actions = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    resources   = [aws_kms_key.state.arn]
+  }
+
+  statement {
+    sid     = "StackKeyAliases"
+    actions = ["kms:CreateAlias", "kms:DeleteAlias", "kms:UpdateAlias"]
+    resources = [
+      "${local.arn_prefix}:kms:${var.region}:${local.account_id}:alias/${local.stack}-*",
+      "${local.arn_prefix}:kms:${var.region}:${local.account_id}:alias/eks/${local.stack}",
+    ]
+  }
+
+  statement {
+    sid     = "Database"
+    actions = ["rds:*"]
+    resources = [
+      "${local.arn_prefix}:rds:${var.region}:${local.account_id}:db:${local.stack}",
+      "${local.arn_prefix}:rds:${var.region}:${local.account_id}:subgrp:${local.stack}*",
+      "${local.arn_prefix}:rds:${var.region}:${local.account_id}:pg:${local.stack}-*",
+      "${local.arn_prefix}:rds:${var.region}:${local.account_id}:og:default:*",
+    ]
+  }
+
+  # RDS creates and rotates its own master-password secret (rds!...) on the
+  # caller's behalf, so the caller needs rights on those secrets.
+  statement {
+    sid       = "DatabaseManagedSecret"
+    actions   = ["secretsmanager:*"]
+    resources = ["${local.arn_prefix}:secretsmanager:${var.region}:${local.account_id}:secret:rds!*"]
+  }
+
+  statement {
+    sid     = "StackLogGroups"
+    actions = ["logs:*"]
+    resources = [
+      "${local.arn_prefix}:logs:${var.region}:${local.account_id}:log-group:/aws/eks/${local.stack}/*",
+      "${local.arn_prefix}:logs:${var.region}:${local.account_id}:log-group:/aws/containerinsights/${local.stack}/*",
+      "${local.arn_prefix}:logs:${var.region}:${local.account_id}:log-group:/aws/rds/instance/${local.stack}/*",
+      "${local.arn_prefix}:logs:${var.region}:${local.account_id}:log-group:/aws/vpc-flow-log/*",
+      "${local.arn_prefix}:logs:${var.region}:${local.account_id}:log-group:aws-waf-logs-${local.stack}-*",
+    ]
+  }
+
+  # WAF log delivery and account-level log reads do not support resource scoping.
+  statement {
+    sid = "LogDelivery"
+    actions = [
+      "logs:CreateLogDelivery", "logs:DeleteLogDelivery", "logs:GetLogDelivery",
+      "logs:ListLogDeliveries", "logs:UpdateLogDelivery", "logs:PutResourcePolicy",
+      "logs:DescribeResourcePolicies", "logs:DescribeLogGroups",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "AlarmsAndDashboard"
+    actions = ["cloudwatch:*"]
+    resources = [
+      "${local.arn_prefix}:cloudwatch:${var.region}:${local.account_id}:alarm:${local.stack}-*",
+      "${local.arn_prefix}:cloudwatch::${local.account_id}:dashboard/${local.stack}",
+    ]
+  }
+
+  statement {
+    sid       = "CloudWatchRead"
+    actions   = ["cloudwatch:Describe*", "cloudwatch:Get*", "cloudwatch:List*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "AlertTopic"
+    actions   = ["sns:*"]
+    resources = ["${local.arn_prefix}:sns:${var.region}:${local.account_id}:${local.stack}-*"]
+  }
+
+  statement {
+    sid       = "ImageRepository"
+    actions   = ["ecr:*"]
+    resources = ["${local.arn_prefix}:ecr:${var.region}:${local.account_id}:repository/${local.stack}/*"]
+  }
+
+  statement {
+    sid     = "WebAcl"
+    actions = ["wafv2:*"]
+    resources = [
+      "${local.arn_prefix}:wafv2:${var.region}:${local.account_id}:regional/webacl/${local.stack}-*/*",
+      "${local.arn_prefix}:wafv2:${var.region}:${local.account_id}:regional/managedruleset/*/*",
+    ]
+  }
+
+  statement {
+    sid = "AccountReads"
+    actions = [
+      "wafv2:Describe*", "wafv2:Get*", "wafv2:List*", "wafv2:CheckCapacity",
+      "acm:Describe*", "acm:List*", "ecr:GetAuthorizationToken", "ecr:DescribeRepositories",
+      "rds:Describe*", "rds:ListTagsForResource", "kms:List*", "sns:List*",
+      "route53:ListHostedZones*", "route53:GetChange", "tag:GetResources",
+      "ssm:GetParameter*",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "RequestTaggedCertificate"
+    actions   = ["acm:RequestCertificate", "acm:AddTagsToCertificate"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+  }
+
+  statement {
+    sid = "ManageStackCertificates"
+    actions = [
+      "acm:AddTagsToCertificate", "acm:DeleteCertificate", "acm:DescribeCertificate",
+      "acm:GetCertificate", "acm:ListTagsForCertificate", "acm:RemoveTagsFromCertificate",
+      "acm:RenewCertificate", "acm:UpdateCertificateOptions",
+    ]
+    resources = ["${local.arn_prefix}:acm:${var.region}:${local.account_id}:certificate/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/${local.stack_tag.key}"
+      values   = [local.stack_tag.value]
+    }
+  }
+
+  # Records in the app's zone only; the zone itself belongs to this bootstrap.
+  statement {
+    sid = "AppDnsRecords"
+    actions = [
+      "route53:ChangeResourceRecordSets", "route53:GetHostedZone",
+      "route53:ListResourceRecordSets", "route53:ListTagsForResource",
+    ]
+    resources = [local.zone_arn]
+  }
+}
+
+resource "aws_iam_policy" "github_apply" {
+  for_each = {
+    core     = data.aws_iam_policy_document.github_apply_core.json
+    iam      = data.aws_iam_policy_document.github_apply_iam.json
+    services = data.aws_iam_policy_document.github_apply_services.json
+  }
+
+  name        = "${local.stack}-github-apply-${each.key}"
+  description = "GitHub Actions apply role: ${each.key} permissions for the ${local.stack} main stack"
+  policy      = each.value
+}
+
+resource "aws_iam_role" "github_apply" {
+  name                 = "${local.stack}-github-apply"
+  description          = "GitHub Actions: terraform apply for the main stack (scoped)"
+  assume_role_policy   = data.aws_iam_policy_document.github_trust["apply"].json
+  max_session_duration = 3600
+}
+
+resource "aws_iam_role_policy_attachment" "github_apply" {
+  for_each = aws_iam_policy.github_apply
+
+  role       = aws_iam_role.github_apply.name
+  policy_arn = each.value.arn
+}

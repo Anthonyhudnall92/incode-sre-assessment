@@ -200,6 +200,9 @@ works in **GovCloud** (`aws-us-gov`).
 | HTTP only if no domain is configured | ACM requires a domain | Always set `domain_name` |
 | App subdomain zone without DNSSEC | The parent domain (hosted elsewhere) is unsigned, so a signed child would not be validated | Sign parent and child; publish the child's DS record at the parent |
 | No Route 53 query logging | Demo scope | Query logs to an encrypted CloudWatch log group |
+| CI plan role uses AWS `ReadOnlyAccess` | `terraform plan` must read every resource type in the stack; the role cannot write and cannot read secret values | A custom read policy generated from CloudTrail (IAM Access Analyzer policy generation) |
+| CI apply role's EC2 and KMS permissions are region-wide, not per resource | EC2 networking has little resource-level scoping, and KMS tag conditions can take 5 minutes to apply to a new key; the state key is explicitly denied | A dedicated account per stack, so "region-wide" means "this stack" |
+| Apply role trusts `main` rather than a `production` environment | GitHub environments need a paid plan on private repositories | Switch `github_apply_subject` to `environment:production` with required reviewers once public |
 | 14-day log retention | Demo | ≥ 1 year, or export to S3/Glacier |
 | LB Controller and CloudWatch agent run in `kube-system`/`amazon-cloudwatch` with broader privileges | Platform components need node/AWS access | Run via EKS managed add-ons where available; restrict with admission policy (Kyverno/Gatekeeper) |
 | Registry modules pinned by version, not commit hash | Readability | Pin by hash or vendor the modules; Dependabot/Renovate for updates |
