@@ -53,3 +53,14 @@ variable "external_dns_chart_version" {
   type    = string
   default = "1.23.0"
 }
+
+variable "otel_collector_chart_version" {
+  type    = string
+  default = "0.178.1"
+}
+
+variable "adot_collector_version" {
+  description = "AWS Distro for OpenTelemetry collector image tag (public.ecr.aws/aws-observability/aws-otel-collector)."
+  type        = string
+  default     = "v0.51.0"
+}
