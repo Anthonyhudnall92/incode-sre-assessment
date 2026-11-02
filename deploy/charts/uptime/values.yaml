@@ -1,0 +1,41 @@
+# Committed defaults. This repository is public, so anything that names the
+# account or the environment (role and secret ARNs, the ECR URL, the database
+# host, the domain) is NOT here: addons/ looks it up by fixed name and passes
+# it to the Argo CD Application.
+
+image:
+  # Set by addons/ (contains the account ID).
+  repository: ""
+  # The release: scripts/deploy.sh writes the digest of the image it pushed,
+  # and merging that change to main is what rolls it out.
+  digest: ""
+
+replicas: 2
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 250m
+    memory: 192Mi
+
+logLevel: INFO
+
+# --- Set by addons/ ---------------------------------------------------------------
+region: us-east-1
+roleArn: ""
+vpcCidr: ""
+db:
+  host: ""
+  port: 5432
+  name: ""
+  secretArn: ""
+  # One NetworkPolicy egress peer per database subnet.
+  subnetCidrs: []
+ingress:
+  # Optional. With a host, the ALB answers only for that name and ExternalDNS
+  # points it at the ALB. With a certificate, it serves HTTPS only.
+  host: ""
+  certificateArn: ""
+  wafAclArn: ""

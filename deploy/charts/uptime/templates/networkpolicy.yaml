@@ -1,0 +1,67 @@
+# Enforced by the VPC CNI network policy agent (enableNetworkPolicy=true).
+#
+# 1. Default deny all ingress and egress in the namespace.
+# 2. Allow in:  TCP 8080 from inside the VPC (ALB nodes in public subnets
+#               and kubelet health probes on the node IPs).
+# 3. Allow out: DNS to CoreDNS, PostgreSQL to the database subnets only,
+#               HTTPS for AWS APIs (STS, Secrets Manager), except IMDS.
+{{- $vpc := required "vpcCidr is required" .Values.vpcCidr }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "uptime.labels" . | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: {{ $vpc }}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL, database subnets only
+    - to:
+        {{- range required "db.subnetCidrs is required" .Values.db.subnetCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    # AWS APIs over TLS (via NAT). Tighten with VPC interface endpoints - see README.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+              - {{ $vpc }}
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,16 @@
+# Placeholder environment values so CI can render and scan the chart exactly
+# as Argo CD will (the real ones are set by addons/ and never committed).
+image:
+  repository: 000000000000.dkr.ecr.us-east-1.amazonaws.com/ci/uptime
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+roleArn: arn:aws:iam::000000000000:role/ci-placeholder
+vpcCidr: 10.40.0.0/16
+db:
+  host: db.example.internal
+  name: uptime
+  secretArn: arn:aws:secretsmanager:us-east-1:000000000000:secret:ci-placeholder
+  subnetCidrs: [10.40.10.0/24, 10.40.11.0/24]
+ingress:
+  host: uptime.example.com
+  certificateArn: arn:aws:acm:us-east-1:000000000000:certificate/ci-placeholder
+  wafAclArn: arn:aws:wafv2:us-east-1:000000000000:regional/webacl/ci/placeholder
