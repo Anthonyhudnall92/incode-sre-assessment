@@ -29,6 +29,9 @@ module "eks" {
 
   enable_irsa = true
 
+  # Fixed role name (sre-demo-cluster) instead of a timestamped prefix.
+  iam_role_use_name_prefix = false
+
   # Envelope-encrypt Kubernetes Secrets with a dedicated, rotating KMS key.
   create_kms_key                  = true
   enable_kms_key_rotation         = true
@@ -76,6 +79,11 @@ module "eks" {
       max_size     = var.node_max_size
       desired_size = var.node_desired_size
 
+      # Fixed role name. The node group and launch template keep their
+      # generated names: they must change when the group is replaced.
+      iam_role_name            = "${var.name}-node"
+      iam_role_use_name_prefix = false
+
       # The CNI policy lives on the vpc-cni IRSA role, not the node role.
       iam_role_attach_cni_policy = false
 
@@ -116,7 +124,7 @@ module "vpc_cni_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix      = "${var.name}-vpc-cni-"
+  role_name             = "${var.name}-vpc-cni"
   attach_vpc_cni_policy = true
   vpc_cni_enable_ipv4   = true
 
@@ -132,7 +140,7 @@ module "lb_controller_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix                       = "${var.name}-lbc-"
+  role_name                              = "${var.name}-lb-controller"
   attach_load_balancer_controller_policy = true
 
   oidc_providers = {
@@ -147,7 +155,7 @@ module "cloudwatch_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix = "${var.name}-cwagent-"
+  role_name = "${var.name}-cloudwatch-agent"
   role_policy_arns = {
     cloudwatch = "arn:${local.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
   }

@@ -107,7 +107,7 @@ data "aws_iam_policy_document" "monitoring_assume" {
 }
 
 resource "aws_iam_role" "monitoring" {
-  name_prefix        = "${var.name}-rds-mon-"
+  name               = "${var.name}-rds-monitoring"
   assume_role_policy = data.aws_iam_policy_document.monitoring_assume.json
 }
 

@@ -3,7 +3,7 @@
 variable "project" {
   description = "Short project name used for resource naming and tags."
   type        = string
-  default     = "sre-demo"
+  default     = "sre"
 }
 
 variable "environment" {
@@ -142,12 +142,12 @@ variable "db_deletion_protection" {
 
 variable "app_name" {
   type    = string
-  default = "demo-app"
+  default = "uptime"
 }
 
 variable "app_namespace" {
   type    = string
-  default = "demo"
+  default = "uptime"
 }
 
 variable "domain_name" {
