@@ -206,7 +206,7 @@ alarms live in AWS services, not in the cluster; an external canary watches the 
 - **Alerts, by urgency.** Pages are symptoms users feel: `external-down` (the canary),
   `monitor-down` (our own services fail their uptime check), `5xx`, `no-running-pods`. Causes
   (DB errors, restarts, node/RDS CPU, memory, storage, connections) back them up. Every alarm has
-  a [`runbook`](docs/runbook.md) entry.
+  a [`runbook`](docs/runbook.md) entry. The [walkthrough](docs/walkthrough.md) is the interview narrative.
 - **Dead man's switch.** Log-based alarms read silence as health. Each app pod logs a heartbeat
   a minute, and `telemetry-silent` fires (missing data = breaching) when they stop arriving.
   The canary's alarm notifies on `INSUFFICIENT_DATA`, so a canary that stops running is noticed.
