@@ -82,6 +82,8 @@ sim "$APPLY" allowed s3:CreateBucket "arn:aws:s3:::sre-demo-canary-${ACCT}" "" "
 sim "$APPLY" denied  s3:DeleteBucket "$STATEBUCKET" "" "delete the state bucket"
 sim "$APPLY" allowed aps:CreateWorkspace "*" "$TAGMAIN" "create a stack-tagged Prometheus"
 sim "$APPLY" allowed iam:PassRole "arn:aws:iam::${ACCT}:role/sre-demo-canary" "$TOLAMBDA" "pass the canary role to Lambda"
+TOSYN="ContextKeyName=iam:PassedToService,ContextKeyValues=synthetics.amazonaws.com,ContextKeyType=string"
+sim "$APPLY" allowed iam:PassRole "arn:aws:iam::${ACCT}:role/sre-demo-canary" "$TOSYN" "pass the canary role to Synthetics (CreateCanary)"
 sim "$APPLY" allowed ec2:MonitorInstances "arn:aws:ec2:us-east-1:${ACCT}:instance/i-x" "$RT" "detailed monitoring on stack instances"
 
 echo "passed: $PASS  failed: $FAIL"

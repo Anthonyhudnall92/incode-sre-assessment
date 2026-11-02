@@ -529,6 +529,8 @@ data "aws_iam_policy_document" "github_apply_iam" {
         "monitoring.rds.amazonaws.com",
         "vpc-flow-logs.amazonaws.com",
         "lambda.amazonaws.com",
+        # CreateCanary passes the canary role as Synthetics itself.
+        "synthetics.amazonaws.com",
         "grafana.amazonaws.com",
       ]
     }
