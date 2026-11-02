@@ -8,7 +8,7 @@ image:
   repository: ""
   # The release: scripts/deploy.sh writes the digest of the image it pushed,
   # and merging that change to main is what rolls it out.
-  digest: "sha256:349b6a0a78139a9643f191587d2569611c46989c87a64c8126014fc0ea8bca41"
+  digest: "sha256:8fb64a4050a07525eb83bf56895110cda534a7b5c85d079ef6ed9aa13fcc54e7"
 
 replicas: 2
 
