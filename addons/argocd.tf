@@ -1,5 +1,6 @@
 # Argo CD, reachable only through `kubectl port-forward` (docs/runbook.md).
-# No Ingress, no SSO, no notifications, no ApplicationSets.
+# No Ingress, no SSO, no notifications, no ApplicationSets. The admin
+# password is generated and kept in Secrets Manager (argocd-admin.tf).
 
 resource "helm_release" "argocd" {
   name             = "argocd"
@@ -13,6 +14,16 @@ resource "helm_release" "argocd" {
     global = {
       # The chart's per-component policies, plus deny everything else in.
       networkPolicy = { create = true, defaultDenyIngress = true }
+    }
+
+    configs = {
+      # Only the hash; the password itself is in Secrets Manager
+      # (argocd-admin.tf). Setting it here also means Argo CD never creates
+      # an argocd-initial-admin-secret on a fresh install.
+      secret = {
+        argocdServerAdminPassword      = random_password.argocd_admin.bcrypt_hash
+        argocdServerAdminPasswordMtime = time_static.argocd_admin_set.rfc3339
+      }
     }
 
     dex            = { enabled = false }

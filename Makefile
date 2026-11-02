@@ -10,7 +10,7 @@ export KUBECONFIG := $(CURDIR)/.kube/config
 TUNNEL_PORT ?= 8443
 API_URL     := $(if $(DIRECT),,https://127.0.0.1:$(TUNNEL_PORT))
 
-.PHONY: help bootstrap backend-config init plan apply release up down status test lint fmt addons argocd kubeconfig tunnel
+.PHONY: help bootstrap backend-config init plan apply release up down status test lint fmt addons argocd argocd-password kubeconfig tunnel
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-16s %s\n",$$1,$$2}'
@@ -52,9 +52,12 @@ kubeconfig: ## Write .kube/config for this cluster (gitignored); points at the t
 	  echo "kubeconfig -> $(API_URL) (via make tunnel)"; \
 	else echo "kubeconfig -> public endpoint (break-glass)"; fi
 
-argocd: kubeconfig ## Open the Argo CD UI on https://localhost:8080 (prints the admin password)
-	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo "  <- admin password"
+argocd: kubeconfig ## Open the Argo CD UI on https://localhost:8080 (user admin; see argocd-password)
 	kubectl -n argocd port-forward svc/argocd-server 8080:443
+
+argocd-password: ## Print the Argo CD admin password from Secrets Manager
+	@aws secretsmanager get-secret-value --region "$$($(TF) output -raw region)" \
+	  --secret-id "$$($(TF) output -raw cluster_name)/argocd-admin" --query SecretString --output text | jq -r .password
 
 up: init plan apply ## Build the main stack; then `make tunnel` (leave running) and `make addons`
 	@echo "Next: make tunnel (in another terminal), then make addons. Argo CD deploys the app."
