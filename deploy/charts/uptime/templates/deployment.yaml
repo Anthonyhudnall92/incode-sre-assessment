@@ -23,6 +23,13 @@ spec:
       annotations:
         # Roll the pods when their configuration changes.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Opt out of OpenTelemetry auto-instrumentation (the CloudWatch
+        # add-on's Application Signals). Its injected init container breaks
+        # Pod Security "restricted", which would block every rollout.
+        instrumentation.opentelemetry.io/inject-java: "false"
+        instrumentation.opentelemetry.io/inject-python: "false"
+        instrumentation.opentelemetry.io/inject-nodejs: "false"
+        instrumentation.opentelemetry.io/inject-dotnet: "false"
     spec:
       serviceAccountName: {{ .Release.Name }}
       # No Kubernetes API token in the pod. (IRSA mounts its own,
