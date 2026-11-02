@@ -84,6 +84,30 @@ module "app_irsa" {
   }
 }
 
+# --- ExternalDNS (optional) -------------------------------------------------------
+# Points the app's domain at whichever ALB currently serves its Ingress. The
+# role can change records in the app zone only.
+
+module "external_dns_irsa" {
+  count   = local.create_cert ? 1 : 0
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.55"
+
+  role_permissions_boundary_arn = var.permissions_boundary_arn
+  policy_name_prefix            = "${var.name}-"
+
+  role_name                     = "${var.name}-external-dns"
+  attach_external_dns_policy    = true
+  external_dns_hosted_zone_arns = ["arn:aws:route53:::hostedzone/${var.route53_zone_id}"]
+
+  oidc_providers = {
+    main = {
+      provider_arn               = var.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:external-dns"]
+    }
+  }
+}
+
 # --- TLS certificate (optional) ----------------------------------------------------
 
 resource "aws_acm_certificate" "app" {
