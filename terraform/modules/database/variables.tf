@@ -11,8 +11,8 @@ variable "db_subnet_group_name" {
 }
 
 variable "allowed_client_sg_ids" {
-  description = "Security groups allowed to connect on 5432."
-  type        = list(string)
+  description = "Security groups allowed to connect on 5432, keyed by a static name. A map (not a list) because the IDs are unknown until apply and for_each keys must be known at plan time."
+  type        = map(string)
 }
 
 variable "db_name" {

@@ -75,7 +75,7 @@ module "database" {
   name                  = local.name
   vpc_id                = module.network.vpc_id
   db_subnet_group_name  = module.network.database_subnet_group_name
-  allowed_client_sg_ids = [module.eks_cluster.node_security_group_id]
+  allowed_client_sg_ids = { eks_nodes = module.eks_cluster.node_security_group_id }
   db_name               = var.db_name
   engine_version        = var.db_engine_version
   instance_class        = var.db_instance_class
