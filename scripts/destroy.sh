@@ -44,6 +44,13 @@ if [[ -n "$CLUSTER" ]] && aws eks describe-cluster --region "$REGION" --name "$C
     [[ "$COUNT" == "0" ]] && break
     sleep 10
   done
+
+  # Delete the remaining Applications while their AppProjects still exist.
+  # Uninstalling the argocd-apps chart removes both at once; Argo CD will not
+  # run an Application's delete finalizer once its project is gone, so the
+  # uninstall would hang.
+  echo "==> Deleting the remaining Argo CD applications"
+  kubectl -n argocd delete applications --all --wait=true --timeout=300s || true
 fi
 
 # Add-ons live in the cluster, so they go before it. Skipped if this layer
