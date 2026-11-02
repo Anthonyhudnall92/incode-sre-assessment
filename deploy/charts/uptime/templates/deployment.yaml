@@ -47,10 +47,14 @@ spec:
         # Never two replicas on one node while another node can take one, so
         # losing a node never takes the whole app down. Cordoned or failing
         # nodes (tainted) are not counted, so this cannot block rescheduling.
+        # matchLabelKeys counts only pods of the same revision: otherwise the
+        # old pods still count during a rolling update, the rule is met at
+        # every step, and both new pods can end up on one node.
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
           nodeTaintsPolicy: Honor
+          matchLabelKeys: ["pod-template-hash"]
           labelSelector:
             matchLabels:
               {{- include "uptime.labels" . | nindent 14 }}
@@ -58,6 +62,7 @@ spec:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
           whenUnsatisfiable: ScheduleAnyway
+          matchLabelKeys: ["pod-template-hash"]
           labelSelector:
             matchLabels:
               {{- include "uptime.labels" . | nindent 14 }}
