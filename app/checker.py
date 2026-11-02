@@ -11,7 +11,8 @@ that was validated:
   * the connection goes to the resolved IP (with the original Host header and
     TLS server name), so a DNS answer cannot change between check and fetch
   * redirects are followed by hand, at most 3, each one validated again
-  * GET or HEAD only, a short timeout, and at most 64 KiB of body is read
+  * GET or HEAD only, a short timeout, and at most 64 KiB of raw (never
+    decompressed) body is read
 
 The pod's NetworkPolicy is a second layer: it only allows egress on 80/443 to
 addresses outside the VPC, and never to the metadata service.
@@ -152,14 +153,17 @@ def _fetch(target: Target, ip: str, method: str, user_agent: str):
         response = pool.urlopen(
             method,
             target.path,
-            headers={"Host": host_header, "User-Agent": user_agent, "Accept": "*/*"},
+            # The body is only drained, never used: ask for it uncompressed
+            # and read raw bytes, so a decompression bomb has nothing to expand.
+            headers={"Host": host_header, "User-Agent": user_agent, "Accept": "*/*",
+                     "Accept-Encoding": "identity"},
             redirect=False,
             preload_content=False,
             assert_same_host=False,
         )
         try:
             if method == "GET":
-                response.read(MAX_BODY_BYTES)
+                response.read(MAX_BODY_BYTES, decode_content=False)
         finally:
             response.release_conn()
         return response.status, response.headers.get("Location")
