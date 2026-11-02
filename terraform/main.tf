@@ -143,6 +143,9 @@ module "observability" {
   db_instance_identifier = module.database.instance_identifier
   alert_email            = var.alert_email
   waf_web_acl_name       = module.app_platform.waf_web_acl_name
+  domain_name            = var.domain_name
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
 
   kms_key_arn                = module.log_storage.kms_key_arn
   application_log_group_name = module.log_storage.application_log_group_name
