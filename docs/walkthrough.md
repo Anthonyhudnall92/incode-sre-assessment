@@ -124,7 +124,11 @@ sessions with `make down`.
 
 ## 8. Pre-interview checklist
 
-1. `make up`, then `make tunnel` (leave running), `make addons`. Allow ~30 minutes.
+1. `make up`, then `make tunnel` (leave running), `make addons`. Measured on 2026-11-02: about
+   19 minutes to all apps Healthy (`make up` 15 min, `make addons` 1.5 min, Argo CD 1 min),
+   plus ~5 minutes for the canary and alarms to settle. `make down` takes about 13 minutes.
+   `make down` deletes the ECR repository: run `make release` after `make up` (a new digest
+   means a release PR), or push the pinned image back first.
 2. `make status`: all Argo CD apps Synced and Healthy.
 3. CloudWatch: every alarm `OK`; the SNS email subscription is confirmed.
 4. Board loads on the domain; the canary's last runs passed.
