@@ -14,6 +14,8 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/load-balancer-attributes: routing.http.drop_invalid_header_fields.enabled=true,deletion_protection.enabled=false
+    # Drain a departing pod for 30 s (default 300), within its preStop + grace.
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
     {{- if $ing.certificateArn }}
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"

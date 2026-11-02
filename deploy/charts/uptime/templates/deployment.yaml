@@ -44,6 +44,17 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       topologySpreadConstraints:
+        # Never two replicas on one node while another node can take one, so
+        # losing a node never takes the whole app down. Cordoned or failing
+        # nodes (tainted) are not counted, so this cannot block rescheduling.
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              {{- include "uptime.labels" . | nindent 14 }}
+        # Prefer different zones too (soft: two zones, two nodes).
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
           whenUnsatisfiable: ScheduleAnyway
@@ -96,6 +107,12 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
+          lifecycle:
+            # Keep serving while the ALB stops sending traffic to this pod
+            # (deregistration takes a few seconds to propagate), then exit.
+            preStop:
+              sleep:
+                seconds: 15
           volumeMounts:
             - name: tmp
               mountPath: /tmp
