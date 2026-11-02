@@ -22,10 +22,41 @@ resource "time_static" "argocd_admin_set" {
   }
 }
 
+# Explicit key policy: the account administers and uses the key through IAM,
+# and Secrets Manager may use it only on behalf of callers in this account.
+data "aws_iam_policy_document" "argocd_admin_key" {
+  statement {
+    sid       = "AccountAdministersThroughIam"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+
+  statement {
+    sid       = "SecretsManagerOnly"
+    effect    = "Deny"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.region}.amazonaws.com"]
+    }
+  }
+}
+
 resource "aws_kms_key" "argocd_admin" {
   description             = "Encrypts the Argo CD admin password secret"
   enable_key_rotation     = true
   deletion_window_in_days = 7
+  policy                  = data.aws_iam_policy_document.argocd_admin_key.json
 }
 
 resource "aws_kms_alias" "argocd_admin" {
