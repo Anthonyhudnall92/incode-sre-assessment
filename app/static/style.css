@@ -12,6 +12,7 @@
   --down: #c8382f;
   --down-soft: #f3c4bf;
   --pending: #8b98a5;
+  --warn: #b26b00;
   --focus: #2f6fd1;
   --radius-field: 6px;
   color-scheme: light;
@@ -29,6 +30,7 @@
     --down: #ff6f62;
     --down-soft: #4f2420;
     --pending: #66778a;
+    --warn: #f0a63c;
     --focus: #7aa7ff;
     color-scheme: dark;
   }
@@ -175,7 +177,7 @@ input::placeholder { color: var(--pending); }
 
 .site {
   display: grid;
-  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) 6.5rem 8rem 2rem;
+  grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) 9rem 9rem 2rem;
   gap: 1.25rem;
   align-items: center;
   padding: 1rem 0;
@@ -229,6 +231,22 @@ input::placeholder { color: var(--pending); }
 .figure small { display: block; margin-top: .2rem; font-size: .75rem; font-weight: 500; color: var(--muted); }
 .figure.is-down { color: var(--down); }
 
+/* Error budget: what is left of the failures the SLO allows this week. */
+.slo { min-width: 0; }
+.budget {
+  display: block;
+  height: 4px;
+  margin-top: .45rem;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+.budget-fill { display: block; width: var(--left, 0%); height: 100%; background: var(--up); }
+.budget.is-low .budget-fill { background: var(--warn); }
+.slo-note { margin: .3rem 0 0; color: var(--muted); font-size: .75rem; }
+.slo-note.is-low { color: var(--warn); }
+.slo-note.is-spent { color: var(--down); }
+
 .last { margin: 0; font-size: .9rem; line-height: 1.35; }
 .last small { display: block; color: var(--muted); font-size: .78rem; }
 .last.is-down { color: var(--down); }
@@ -276,7 +294,7 @@ input::placeholder { color: var(--pending); }
   }
   .site-id { grid-area: id; }
   .strip { grid-area: strip; }
-  .figure { grid-area: up; }
+  .slo { grid-area: up; }
   .last { grid-area: last; text-align: right; }
   .remove { grid-area: remove; }
 }
