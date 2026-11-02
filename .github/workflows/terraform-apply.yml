@@ -1,0 +1,129 @@
+name: terraform-apply
+
+# Applies the main stack after a change lands on main.
+#
+#   1. plan   Read-only plan (sre-demo-github-plan). Its summary is on the run
+#             page, so the approver sees what will change before approving.
+#   2. apply  Waits for approval in the `production` environment, then runs as
+#             sre-demo-github-apply. It re-plans and refuses to apply unless
+#             the change list matches what was reviewed in step 1.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # exchange GitHub's OIDC token for AWS credentials
+
+# One apply at a time, and never cancel one halfway through.
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  plan:
+    name: Plan for review
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+      digest: ${{ steps.plan.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.14.9
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_PLAN_ROLE_ARN }}
+          role-session-name: main-${{ github.run_id }}-plan
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Write Terraform config from secrets
+        env:
+          TF_BACKEND_CONFIG: ${{ secrets.TF_BACKEND_CONFIG }}
+          TF_VARS: ${{ secrets.TF_VARS }}
+        run: scripts/ci/terraform-config.sh
+
+      - name: terraform init
+        run: terraform -chdir=terraform init -input=false -backend-config=backend.hcl >/dev/null
+
+      - name: terraform plan
+        id: plan
+        run: scripts/ci/terraform-plan.sh
+
+  apply:
+    name: Apply (approval required)
+    needs: plan
+    if: needs.plan.outputs.changes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.14.9
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          role-session-name: main-${{ github.run_id }}-apply
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Write Terraform config from secrets
+        env:
+          TF_BACKEND_CONFIG: ${{ secrets.TF_BACKEND_CONFIG }}
+          TF_VARS: ${{ secrets.TF_VARS }}
+        run: scripts/ci/terraform-config.sh
+
+      - name: terraform init
+        run: terraform -chdir=terraform init -input=false -backend-config=backend.hcl >/dev/null
+
+      - name: terraform plan
+        id: plan
+        run: scripts/ci/terraform-plan.sh
+
+      - name: Check the plan matches the reviewed one
+        env:
+          REVIEWED: ${{ needs.plan.outputs.digest }}
+          CURRENT: ${{ steps.plan.outputs.digest }}
+        run: |
+          if [[ "$REVIEWED" != "$CURRENT" ]]; then
+            echo "::error::The plan changed after review (state or code moved). Re-run the workflow to review the new plan."
+            exit 1
+          fi
+          echo "plan matches the reviewed change list"
+
+      - name: terraform apply
+        working-directory: terraform
+        run: |
+          set +e
+          terraform apply -input=false -lock-timeout=5m -no-color tfplan >"$RUNNER_TEMP/apply.log" 2>&1
+          status=$?
+          set -e
+          # Only the outcome: resource IDs and values stay out of the public log.
+          grep -E '^Apply complete!' "$RUNNER_TEMP/apply.log" || true
+          if [[ $status -ne 0 ]]; then
+            grep -A12 -E '^(│ )?Error' "$RUNNER_TEMP/apply.log" || tail -20 "$RUNNER_TEMP/apply.log"
+            exit $status
+          fi

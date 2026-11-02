@@ -37,6 +37,11 @@ jobs:
           terraform -chdir=terraform init -backend=false -input=false
           terraform -chdir=terraform validate
 
+      - name: validate (addons)
+        run: |
+          terraform -chdir=addons init -backend=false -input=false
+          terraform -chdir=addons validate
+
       - uses: terraform-linters/setup-tflint@v4
 
       - name: tflint
