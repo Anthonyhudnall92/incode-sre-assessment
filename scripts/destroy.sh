@@ -9,6 +9,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="$ROOT/terraform"
+# Repo-local kubeconfig: never touch the global one (and its current context).
+export KUBECONFIG="$ROOT/.kube/config"
 
 TF_OUT="$(terraform -chdir="$TF_DIR" output -json 2>/dev/null || echo '{}')"
 out() { jq -r --arg k "$1" '.[$k].value // empty' <<<"$TF_OUT"; }
@@ -18,7 +20,7 @@ CLUSTER="$(out cluster_name)"
 NAMESPACE="$(out app_namespace)"
 
 if [[ -n "$CLUSTER" ]] && aws eks describe-cluster --region "$REGION" --name "$CLUSTER" >/dev/null 2>&1; then
-  aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" >/dev/null
+  aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER" --kubeconfig "$KUBECONFIG" >/dev/null
   echo "==> Deleting namespace $NAMESPACE (removes the Ingress and its ALB)"
   kubectl delete namespace "$NAMESPACE" --ignore-not-found --wait=true --timeout=300s || true
 

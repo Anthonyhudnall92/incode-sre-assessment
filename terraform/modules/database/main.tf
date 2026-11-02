@@ -46,7 +46,7 @@ resource "aws_security_group" "db" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "db_from_clients" {
-  for_each = toset(var.allowed_client_sg_ids)
+  for_each = var.allowed_client_sg_ids
 
   security_group_id            = aws_security_group.db.id
   referenced_security_group_id = each.value
@@ -62,9 +62,13 @@ resource "aws_db_parameter_group" "this" {
   description = "${var.name} PostgreSQL parameters"
 
   # Reject any non-TLS client connection (encryption in transit).
+  # Static parameter: RDS records it as pending-reboot, so say so here or every
+  # plan shows a change. (It is already in effect: the instance was created
+  # with this parameter group.)
   parameter {
-    name  = "rds.force_ssl"
-    value = "1"
+    name         = "rds.force_ssl"
+    value        = "1"
+    apply_method = "pending-reboot"
   }
 
   parameter {
@@ -107,8 +111,9 @@ data "aws_iam_policy_document" "monitoring_assume" {
 }
 
 resource "aws_iam_role" "monitoring" {
-  name_prefix        = "${var.name}-rds-mon-"
-  assume_role_policy = data.aws_iam_policy_document.monitoring_assume.json
+  name                 = "${var.name}-rds-monitoring"
+  permissions_boundary = var.permissions_boundary_arn
+  assume_role_policy   = data.aws_iam_policy_document.monitoring_assume.json
 }
 
 resource "aws_iam_role_policy_attachment" "monitoring" {

@@ -27,3 +27,17 @@ output "dns_name_servers" {
   description = "Add each as an NS record for the subdomain at the parent domain's DNS provider."
   value       = one(aws_route53_zone.app[*].name_servers)
 }
+
+output "github_plan_role_arn" {
+  description = "Set as the AWS_PLAN_ROLE_ARN repository variable in GitHub."
+  value       = aws_iam_role.github_plan.arn
+}
+
+output "github_apply_role_arn" {
+  description = "Set as the AWS_APPLY_ROLE_ARN repository variable in GitHub."
+  value       = aws_iam_role.github_apply.arn
+}
+
+output "workload_boundary_arn" {
+  value = aws_iam_policy.workload_boundary.arn
+}

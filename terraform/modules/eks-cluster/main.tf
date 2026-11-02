@@ -22,17 +22,37 @@ module "eks" {
   cluster_endpoint_public_access       = true
   cluster_endpoint_public_access_cidrs = var.admin_cidrs
 
-  # Access entries (no aws-auth ConfigMap). The identity running Terraform
-  # gets cluster-admin; everything else must be granted explicitly.
+  # Access entries (no aws-auth ConfigMap). Admins are listed explicitly rather
+  # than "whoever ran Terraform", so a CI apply cannot silently swap them.
   authentication_mode                      = "API"
-  enable_cluster_creator_admin_permissions = true
+  enable_cluster_creator_admin_permissions = false
+  access_entries = {
+    for name, arn in var.cluster_admins : name => {
+      principal_arn = arn
+      policy_associations = {
+        cluster-admin = {
+          policy_arn   = "arn:${local.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+  }
 
   enable_irsa = true
 
+  # Fixed role name (sre-demo-cluster) instead of a timestamped prefix.
+  iam_role_use_name_prefix      = false
+  iam_role_permissions_boundary = var.permissions_boundary_arn
+
   # Envelope-encrypt Kubernetes Secrets with a dedicated, rotating KMS key.
-  create_kms_key                  = true
-  enable_kms_key_rotation         = true
-  kms_key_deletion_window_in_days = 7
+  create_kms_key          = true
+  enable_kms_key_rotation = true
+  # Explicit, for the same reason as access_entries. The default key policy
+  # still delegates to IAM, so a CI role with KMS permissions can manage it.
+  kms_key_administrators                    = values(var.cluster_admins)
+  kms_key_deletion_window_in_days           = 7
+  cluster_encryption_policy_name            = "${var.name}-cluster-encryption"
+  cluster_encryption_policy_use_name_prefix = false
   cluster_encryption_config = {
     resources = ["secrets"]
   }
@@ -59,11 +79,6 @@ module "eks" {
         enableNetworkPolicy = "true"
       })
     }
-    # Container Insights metrics + Fluent Bit log shipping to CloudWatch.
-    amazon-cloudwatch-observability = {
-      most_recent              = true
-      service_account_role_arn = module.cloudwatch_irsa.iam_role_arn
-    }
   }
 
   eks_managed_node_groups = {
@@ -75,6 +90,12 @@ module "eks" {
       min_size     = var.node_min_size
       max_size     = var.node_max_size
       desired_size = var.node_desired_size
+
+      # Fixed role name. The node group and launch template keep their
+      # generated names: they must change when the group is replaced.
+      iam_role_name                 = "${var.name}-node"
+      iam_role_use_name_prefix      = false
+      iam_role_permissions_boundary = var.permissions_boundary_arn
 
       # The CNI policy lives on the vpc-cni IRSA role, not the node role.
       iam_role_attach_cni_policy = false
@@ -116,7 +137,10 @@ module "vpc_cni_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix      = "${var.name}-vpc-cni-"
+  role_permissions_boundary_arn = var.permissions_boundary_arn
+  policy_name_prefix            = "${var.name}-"
+
+  role_name             = "${var.name}-vpc-cni"
   attach_vpc_cni_policy = true
   vpc_cni_enable_ipv4   = true
 
@@ -132,7 +156,10 @@ module "lb_controller_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix                       = "${var.name}-lbc-"
+  role_permissions_boundary_arn = var.permissions_boundary_arn
+  policy_name_prefix            = "${var.name}-"
+
+  role_name                              = "${var.name}-lb-controller"
   attach_load_balancer_controller_policy = true
 
   oidc_providers = {
@@ -147,7 +174,10 @@ module "cloudwatch_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix = "${var.name}-cwagent-"
+  role_permissions_boundary_arn = var.permissions_boundary_arn
+  policy_name_prefix            = "${var.name}-"
+
+  role_name = "${var.name}-cloudwatch-agent"
   role_policy_arns = {
     cloudwatch = "arn:${local.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
   }
@@ -161,6 +191,35 @@ module "cloudwatch_irsa" {
 }
 
 # --- AWS Load Balancer Controller ----------------------------------------------
+
+# --- Container Insights add-on ----------------------------------------------------
+# Metrics + Fluent Bit log shipping to CloudWatch. Kept out of the module's
+# cluster_addons so it can wait for the pre-created log groups (KMS key and
+# retention) with a resource-level depends_on. A module-level depends_on would
+# defer every data source in this module whenever log storage changes, turning
+# unrelated attributes "known after apply" and forcing needless replacements.
+
+resource "terraform_data" "log_groups_ready" {
+  input = var.container_log_group_arns
+}
+
+data "aws_eks_addon_version" "cloudwatch_observability" {
+  addon_name         = "amazon-cloudwatch-observability"
+  kubernetes_version = module.eks.cluster_version
+  most_recent        = true
+}
+
+resource "aws_eks_addon" "cloudwatch_observability" {
+  cluster_name                = module.eks.cluster_name
+  addon_name                  = "amazon-cloudwatch-observability"
+  addon_version               = data.aws_eks_addon_version.cloudwatch_observability.version
+  service_account_role_arn    = module.cloudwatch_irsa.iam_role_arn
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+
+  # After the nodes (it runs a DaemonSet) and after its log groups exist.
+  depends_on = [module.eks, terraform_data.log_groups_ready]
+}
 
 resource "helm_release" "aws_load_balancer_controller" {
   name       = "aws-load-balancer-controller"

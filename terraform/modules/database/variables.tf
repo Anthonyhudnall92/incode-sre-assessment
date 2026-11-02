@@ -11,8 +11,8 @@ variable "db_subnet_group_name" {
 }
 
 variable "allowed_client_sg_ids" {
-  description = "Security groups allowed to connect on 5432."
-  type        = list(string)
+  description = "Security groups allowed to connect on 5432, keyed by a static name. A map (not a list) because the IDs are unknown until apply and for_each keys must be known at plan time."
+  type        = map(string)
 }
 
 variable "db_name" {
@@ -41,5 +41,10 @@ variable "log_retention_days" {
 
 variable "logs_kms_key_arn" {
   description = "KMS key for CloudWatch log group encryption."
+  type        = string
+}
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary attached to every IAM role this module creates."
   type        = string
 }

@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1.7
 #
-# Base image pinned to an exact patch tag. For production, pin by digest too:
-#   python:3.12.12-slim-bookworm@sha256:<digest>
+# Base image pinned by tag and digest, so a rebuild cannot silently pick up a
+# different image. Bump both when the CI image scan reports fixable CVEs.
 # No HEALTHCHECK: Kubernetes startup/liveness/readiness probes own health.
 # checkov:skip=CKV_DOCKER_2:Health is checked by Kubernetes probes, not Docker
 
 # --- build stage: install dependencies into an isolated prefix ---------------------
-FROM python:3.12.12-slim-bookworm AS build
+FROM python:3.12.16-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337 AS build
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -21,7 +21,7 @@ RUN mkdir -p /build/certs \
  && grep -q "BEGIN CERTIFICATE" /build/certs/rds-global-bundle.pem
 
 # --- runtime stage ---------------------------------------------------------------
-FROM python:3.12.12-slim-bookworm
+FROM python:3.12.16-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -29,9 +29,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Unprivileged user with a fixed UID that matches runAsUser in the manifest.
 # pip/setuptools are removed from the runtime image to shrink the CVE surface.
+# /app is created up front: COPY --chmod=0444 would otherwise give the
+# directories it creates mode 0444 too, and the app user could not enter them.
 RUN groupadd --gid 10001 app \
  && useradd --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app \
- && (pip uninstall -y pip setuptools wheel || true)
+ && (pip uninstall -y pip setuptools wheel || true) \
+ && install -d -m 0755 /app /app/certs
 
 COPY --from=build /install /usr/local
 # Code and certs are owned by root and read-only to the app user.

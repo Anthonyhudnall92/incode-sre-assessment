@@ -21,3 +21,25 @@ variable "dns_zone_name" {
   type        = string
   default     = null
 }
+
+variable "github_repository" {
+  description = "GitHub repository allowed to assume the CI roles, as owner/name."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", var.github_repository))
+    error_message = "github_repository must look like owner/name."
+  }
+}
+
+variable "github_apply_subject" {
+  description = "OIDC subject (after repo:<owner>/<name>:) allowed to assume the apply role. \"environment:production\" requires a GitHub environment, which private repositories only get on paid plans; use \"ref:refs/heads/main\" until the repository is public."
+  type        = string
+  default     = "environment:production"
+}
+
+variable "ci_role_test_principals" {
+  description = "IAM ARNs allowed to assume the CI roles directly, to test their permissions locally. Keep empty except while testing."
+  type        = list(string)
+  default     = []
+}

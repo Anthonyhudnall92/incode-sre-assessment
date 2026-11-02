@@ -34,7 +34,7 @@ down: ## Tear everything down (ALB first, then Terraform)
 	scripts/destroy.sh
 
 status: ## Quick health view
-	kubectl -n demo get deploy,pods,svc,ingress,networkpolicy -o wide
+	kubectl -n "$$($(TF) output -raw app_namespace)" get deploy,pods,svc,ingress,networkpolicy -o wide
 	@$(TF) output -raw dashboard_url; echo
 
 test: ## App unit tests

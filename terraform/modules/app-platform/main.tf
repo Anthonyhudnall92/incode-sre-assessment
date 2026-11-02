@@ -60,7 +60,7 @@ data "aws_iam_policy_document" "app" {
 }
 
 resource "aws_iam_policy" "app" {
-  name_prefix = "${var.name}-${var.app_name}-"
+  name        = "${var.name}-${var.app_name}-db-secret-read"
   description = "Least-privilege access for ${var.app_name} to its database secret"
   policy      = data.aws_iam_policy_document.app.json
 }
@@ -69,7 +69,9 @@ module "app_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.55"
 
-  role_name_prefix = "${var.name}-${var.app_name}-"
+  role_permissions_boundary_arn = var.permissions_boundary_arn
+
+  role_name = "${var.name}-${var.app_name}"
   role_policy_arns = {
     app = aws_iam_policy.app.arn
   }

@@ -6,6 +6,12 @@ region = "us-east-1"
 #   curl -s https://checkip.amazonaws.com
 admin_cidrs = ["203.0.113.10/32"]
 
+# Who gets cluster-admin (kubectl) and administers the cluster's KMS key.
+#   aws sts get-caller-identity --query Arn --output text
+cluster_admins = {
+  you = "arn:aws:iam::123456789012:user/your-user"
+}
+
 # Optional: HTTPS on the ALB via ACM. Requires a Route 53 hosted zone you own.
 # domain_name     = "demo.example.com"
 # route53_zone_id = "Z0123456789ABCDEFGHIJ"

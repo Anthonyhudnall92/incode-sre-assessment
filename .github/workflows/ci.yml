@@ -49,6 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # gitleaks scans the PR's commit range, which needs full history.
+          fetch-depth: 0
 
       # Scan the manifests exactly as they will be applied (templates rendered
       # with placeholder values), not the raw ${VAR} templates.
@@ -79,6 +82,9 @@ jobs:
         with:
           directory: .
           config_file: .checkov.yaml
+          # Console output only. The default (SARIF) writes results.sarif as
+          # root, which the gitleaks step then cannot overwrite.
+          output_format: cli
 
       - name: gitleaks (no secrets in history)
         uses: gitleaks/gitleaks-action@v2
@@ -110,7 +116,8 @@ jobs:
         run: docker build -t demo-app:ci app
 
       - name: trivy image scan (fail on fixable HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.33.1
+        # Pinned by commit: a tag can be moved to different code, a SHA cannot.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: demo-app:ci
           severity: CRITICAL,HIGH

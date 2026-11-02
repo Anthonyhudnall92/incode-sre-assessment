@@ -15,7 +15,16 @@ locals {
     Project     = var.project
     Environment = var.environment
     ManagedBy   = "terraform"
+    # The CI apply role's KMS and ACM permissions are scoped to this tag
+    # (bootstrap/github-oidc.tf), which keeps it away from bootstrap resources.
+    Stack = "main"
   }
+}
+
+# Created by the bootstrap layer. Every IAM role in this stack carries it, and
+# the CI apply role can only create roles that do.
+data "aws_iam_policy" "workload_boundary" {
+  name = "${local.name}-workload-boundary"
 }
 
 # Account-level guardrail: every new EBS volume in this region is encrypted,
@@ -25,7 +34,7 @@ resource "aws_ebs_encryption_by_default" "this" {
 }
 
 # KMS key for every log group + the Container Insights log groups. Must exist
-# before the cluster's CloudWatch add-on starts shipping logs (depends_on below).
+# before the cluster's CloudWatch add-on starts shipping logs (container_log_group_arns).
 module "log_storage" {
   source = "./modules/log-storage"
 
@@ -38,6 +47,8 @@ module "log_storage" {
 module "network" {
   source = "./modules/network"
 
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
+
   name               = local.name
   cidr               = var.vpc_cidr
   azs                = local.azs
@@ -49,6 +60,10 @@ module "network" {
 
 module "eks_cluster" {
   source = "./modules/eks-cluster"
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
+
+  cluster_admins = var.cluster_admins
 
   name                        = local.name
   kubernetes_version          = var.kubernetes_version
@@ -65,17 +80,18 @@ module "eks_cluster" {
   lb_controller_chart_version = var.lb_controller_chart_version
   log_retention_days          = var.log_retention_days
   logs_kms_key_arn            = module.log_storage.kms_key_arn
-
-  depends_on = [aws_ebs_encryption_by_default.this, module.log_storage]
+  container_log_group_arns    = module.log_storage.container_log_group_arns
 }
 
 module "database" {
   source = "./modules/database"
 
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
+
   name                  = local.name
   vpc_id                = module.network.vpc_id
   db_subnet_group_name  = module.network.database_subnet_group_name
-  allowed_client_sg_ids = [module.eks_cluster.node_security_group_id]
+  allowed_client_sg_ids = { eks_nodes = module.eks_cluster.node_security_group_id }
   db_name               = var.db_name
   engine_version        = var.db_engine_version
   instance_class        = var.db_instance_class
@@ -87,6 +103,8 @@ module "database" {
 
 module "app_platform" {
   source = "./modules/app-platform"
+
+  permissions_boundary_arn = data.aws_iam_policy.workload_boundary.arn
 
   name               = local.name
   region             = var.region
@@ -116,4 +134,9 @@ module "observability" {
 
   kms_key_arn                = module.log_storage.kms_key_arn
   application_log_group_name = module.log_storage.application_log_group_name
+}
+
+moved {
+  from = module.eks_cluster.module.eks.aws_eks_addon.this["amazon-cloudwatch-observability"]
+  to   = module.eks_cluster.aws_eks_addon.cloudwatch_observability
 }

@@ -3,7 +3,7 @@
 variable "project" {
   description = "Short project name used for resource naming and tags."
   type        = string
-  default     = "sre-demo"
+  default     = "sre"
 }
 
 variable "environment" {
@@ -58,6 +58,16 @@ variable "admin_cidrs" {
   validation {
     condition     = length(var.admin_cidrs) > 0 && alltrue([for c in var.admin_cidrs : can(cidrhost(c, 0)) && c != "0.0.0.0/0"])
     error_message = "admin_cidrs must be a non-empty list of valid CIDRs and must not contain 0.0.0.0/0."
+  }
+}
+
+variable "cluster_admins" {
+  description = "IAM principals that get cluster-admin and administer the cluster's KMS key, keyed by a short name, e.g. { demo-account = \"arn:aws:iam::<account>:user/demo_account\" }. Explicit so the result does not depend on who runs Terraform (a laptop or CI)."
+  type        = map(string)
+
+  validation {
+    condition     = length(var.cluster_admins) > 0 && alltrue([for arn in values(var.cluster_admins) : can(regex("^arn:aws:iam::[0-9]{12}:(user|role)/", arn))])
+    error_message = "cluster_admins must name at least one IAM user or role ARN."
   }
 }
 
@@ -142,12 +152,12 @@ variable "db_deletion_protection" {
 
 variable "app_name" {
   type    = string
-  default = "demo-app"
+  default = "uptime"
 }
 
 variable "app_namespace" {
   type    = string
-  default = "demo"
+  default = "uptime"
 }
 
 variable "domain_name" {
