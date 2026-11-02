@@ -219,5 +219,7 @@ resource "helm_release" "argocd_apps" {
     applications = local.applications
   })]
 
-  depends_on = [helm_release.argocd]
+  # The apps deploy into observability without CreateNamespace; Terraform
+  # owns that namespace, so it must exist before Argo CD syncs them.
+  depends_on = [helm_release.argocd, kubernetes_namespace_v1.observability]
 }

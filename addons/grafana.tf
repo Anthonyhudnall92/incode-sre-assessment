@@ -132,11 +132,6 @@ resource "kubernetes_namespace_v1" "observability" {
   }
 }
 
-import {
-  to = kubernetes_namespace_v1.observability
-  id = "observability"
-}
-
 resource "random_password" "grafana_admin" {
   length      = 32
   special     = false
