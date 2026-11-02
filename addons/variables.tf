@@ -64,3 +64,9 @@ variable "adot_collector_version" {
   type        = string
   default     = "v0.51.0"
 }
+
+variable "grafana_chart_version" {
+  description = "grafana-community/grafana chart (the charts moved from grafana/helm-charts)."
+  type        = string
+  default     = "14.3.0"
+}

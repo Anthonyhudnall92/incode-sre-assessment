@@ -53,7 +53,7 @@ data "aws_iam_policy_document" "argocd_admin_key" {
 }
 
 resource "aws_kms_key" "argocd_admin" {
-  description             = "Encrypts the Argo CD admin password secret"
+  description             = "Encrypts the admin password secrets (Argo CD, Grafana)"
   enable_key_rotation     = true
   deletion_window_in_days = 7
   policy                  = data.aws_iam_policy_document.argocd_admin_key.json

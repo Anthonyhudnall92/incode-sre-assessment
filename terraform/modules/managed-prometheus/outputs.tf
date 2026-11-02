@@ -13,3 +13,7 @@ output "query_url" {
 output "collector_role_arn" {
   value = module.collector_irsa.iam_role_arn
 }
+
+output "grafana_role_arn" {
+  value = module.grafana_irsa.iam_role_arn
+}

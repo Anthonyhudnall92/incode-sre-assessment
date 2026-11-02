@@ -143,16 +143,8 @@ locals {
         }
       }
       destination = { server = local.in_cluster, namespace = local.collector_ns }
-      syncPolicy = merge(local.sync, {
-        syncOptions = concat(local.sync.syncOptions, ["CreateNamespace=true"])
-        # The collector's namespace enforces Pod Security "restricted" too.
-        managedNamespaceMetadata = {
-          labels = {
-            "pod-security.kubernetes.io/enforce" = "restricted"
-            "pod-security.kubernetes.io/warn"    = "restricted"
-          }
-        }
-      })
+      # The namespace (Pod Security "restricted") is Terraform's: grafana.tf.
+      syncPolicy = local.sync
     }
   } : {}
 }
