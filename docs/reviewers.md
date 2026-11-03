@@ -53,6 +53,9 @@ On the live board (the URL is shared separately; the repository is public, so it
 - Add a public site and watch its strip fill in within a minute.
 - Add `http://169.254.169.254/`: WAF answers 403. Behind it, the checker refuses non-public
   addresses, and NetworkPolicy blocks the metadata address: three layers.
+  `scripts/ssrf-probe.sh https://<domain>` tries 25 disguised forms (decimal and octal IPs,
+  IPv6-mapped, DNS names that resolve inside, other schemes) and prints which layer refused each.
+- Add more than 10 sites from one address within 10 minutes: WAF answers 429.
 - `http://` redirects to `https://`; TLS 1.3.
 
 During a live session, with operator access:

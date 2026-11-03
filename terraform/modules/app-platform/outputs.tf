@@ -10,6 +10,15 @@ output "waf_web_acl_arn" {
   value = var.enable_waf ? aws_wafv2_web_acl.app[0].arn : ""
 }
 
+output "alb_logs_bucket" {
+  description = "S3 bucket for the app ALB's access logs."
+  value       = aws_s3_bucket.alb_logs.bucket
+}
+
+output "alb_logs_prefix" {
+  value = local.alb_logs_prefix
+}
+
 output "waf_web_acl_name" {
   value = var.enable_waf ? aws_wafv2_web_acl.app[0].name : ""
 }

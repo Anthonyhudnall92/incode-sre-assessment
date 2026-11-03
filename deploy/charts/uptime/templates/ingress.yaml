@@ -13,7 +13,13 @@ metadata:
     alb.ingress.kubernetes.io/healthcheck-path: /healthz
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
-    alb.ingress.kubernetes.io/load-balancer-attributes: routing.http.drop_invalid_header_fields.enabled=true,deletion_protection.enabled=false
+    {{- $attrs := list "routing.http.drop_invalid_header_fields.enabled=true" "deletion_protection.enabled=false" }}
+    {{- with $ing.accessLogs.bucket }}
+    {{- $attrs = append $attrs "access_logs.s3.enabled=true" }}
+    {{- $attrs = append $attrs (printf "access_logs.s3.bucket=%s" .) }}
+    {{- $attrs = append $attrs (printf "access_logs.s3.prefix=%s" $ing.accessLogs.prefix) }}
+    {{- end }}
+    alb.ingress.kubernetes.io/load-balancer-attributes: {{ join "," $attrs }}
     # Drain a departing pod for 30 s (default 300), within its preStop + grace.
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
     {{- if $ing.certificateArn }}

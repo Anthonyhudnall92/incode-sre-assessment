@@ -203,6 +203,68 @@ resource "aws_wafv2_web_acl" "app" {
     }
   }
 
+  # Adding a site is the only write a visitor can make. Without this, one
+  # client could fill the board's 30 slots in seconds; the general limit
+  # below is sized for page views, not for adds.
+  rule {
+    name     = "add-monitor-rate-limit"
+    priority = 25
+
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+
+    statement {
+      rate_based_statement {
+        limit                 = 10 # adds per 10 minutes per IP (the lowest limit WAF allows)
+        evaluation_window_sec = 600
+        aggregate_key_type    = "IP"
+
+        scope_down_statement {
+          and_statement {
+            statement {
+              byte_match_statement {
+                search_string         = "POST"
+                positional_constraint = "EXACTLY"
+                field_to_match {
+                  method {}
+                }
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
+              }
+            }
+
+            statement {
+              byte_match_statement {
+                search_string         = "/api/monitors"
+                positional_constraint = "STARTS_WITH"
+                field_to_match {
+                  uri_path {}
+                }
+                text_transformation {
+                  priority = 0
+                  type     = "LOWERCASE"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "add-monitor-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
   rule {
     name     = "per-ip-rate-limit"
     priority = 30
