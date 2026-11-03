@@ -13,7 +13,8 @@ Endpoints
                               an operator's command (see below)
   GET    /healthz             liveness: the process is up
   GET    /readyz              readiness: the database answers `SELECT 1`
-  GET    /metrics             Prometheus metrics
+  GET    /metrics             Prometheus metrics (in-cluster only: refused
+                              when it came through the ALB)
 
 Incident demo
   `make incident MODE=down|slow|ok` switches the demo service, which the
@@ -679,6 +680,12 @@ def make_handler(db, static_dir: Path = STATIC_DIR):
                     except Exception:  # noqa: BLE001
                         return self._json(503, {"status": "database unavailable"})
                 if path == "/metrics":
+                    # For the in-cluster collector only. The ALB adds
+                    # X-Forwarded-For to everything it forwards (a client
+                    # cannot remove it); the collector scrapes the pod
+                    # directly and never sends one. WAF blocks it first.
+                    if self.headers.get("X-Forwarded-For") is not None:
+                        return self._json(404, {"error": "Not found."})
                     self._send(200, generate_latest(), CONTENT_TYPE_LATEST)
                     return 200
                 if path == "/api/monitors":
