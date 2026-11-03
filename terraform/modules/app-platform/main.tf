@@ -159,6 +159,54 @@ resource "aws_wafv2_web_acl" "app" {
     allow {}
   }
 
+  # Paths meant for inside the cluster only: the collector scrapes /metrics
+  # from the pod, and the drill switch listens on loopback. The app refuses
+  # both from the ALB too; this keeps them off the internet at the edge.
+  rule {
+    name     = "block-internal-paths"
+    priority = 5
+
+    action {
+      block {
+        custom_response {
+          response_code = 404
+        }
+      }
+    }
+
+    statement {
+      or_statement {
+        dynamic "statement" {
+          for_each = ["/metrics", "/internal/"]
+          content {
+            byte_match_statement {
+              search_string         = statement.value
+              positional_constraint = "STARTS_WITH"
+              field_to_match {
+                uri_path {}
+              }
+              # Decode and lowercase first, so /%6Detrics or /METRICS match too.
+              text_transformation {
+                priority = 0
+                type     = "URL_DECODE"
+              }
+              text_transformation {
+                priority = 1
+                type     = "LOWERCASE"
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "block-internal-paths"
+      sampled_requests_enabled   = true
+    }
+  }
+
   rule {
     name     = "aws-common-rule-set"
     priority = 10

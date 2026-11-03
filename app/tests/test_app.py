@@ -115,6 +115,16 @@ class AppTest(unittest.TestCase):
         self.assertIn(b'route="other"', body)
         self.assertIn(b'route="/api/monitors/:id"', body)
 
+    def test_metrics_hidden_from_the_internet(self):
+        # The ALB adds X-Forwarded-For to every request it forwards; the
+        # collector scrapes the pod directly, so it never sends one.
+        base = self.start(FakeDb())
+        for xff in ("203.0.113.7", "203.0.113.7, 10.0.1.5", ""):
+            status, body, _ = self.request(base + "/metrics", headers={"X-Forwarded-For": xff})
+            self.assertEqual(status, 404, xff)
+            self.assertNotIn(b"python_info", body)
+        self.assertEqual(self.request(base + "/metrics")[0], 200)
+
     # The page ------------------------------------------------------------------
     def test_board_page_and_assets_with_security_headers(self):
         base = self.start(FakeDb(healthy=False))  # the page itself needs no database
