@@ -26,7 +26,8 @@ Before the call: `make tunnel` running in one terminal (see the checklist at the
 | # | Show | Say |
 |---|---|---|
 | 1 | **The board**, `https://<domain>/` | The app: shared uptime board, 7-day SLO 99.9 %, error budget, p95. Add a site live. |
-| 2 | An SSRF attempt: add `http://169.254.169.254/` | Blocked by WAF's SSRF rule; behind it the checker refuses non-public addresses, and NetworkPolicy is the third layer. |
+| 2 | **SSRF**: `scripts/ssrf-probe.sh https://<domain>` | 25 disguised internal addresses (decimal/octal IPs, IPv6-mapped, DNS names that resolve inside, other schemes), each refused: 403 = WAF, 400 = the checker (pinned IP, revalidated redirects). NetworkPolicy is the third layer. Adding more than 10 sites per IP in 10 minutes gets a 429. |
+| 2b | **ALB access logs**: `aws s3 ls s3://$(terraform -chdir=terraform output -raw alb_logs_bucket)/alb/ --recursive \| tail -3` | WAF logs say what was asked and WAF's verdict; ALB logs add the status code, target, timings and TLS version. The probe's 403s are in there. Delivered every 5 minutes. |
 | 3 | **Grafana**: `make grafana` → localhost:3000 | Data comes from Managed Prometheus (ADOT collector, SigV4) and CloudWatch; Grafana is just the view. The canary panel is checked from outside the VPC. |
 | 4 | **Incident drill**: `make incident MODE=down` | Board turns red within a minute, error budget spent; `monitor-down` emails in about 2–3 minutes (2 of 3 failed checks, so one blip does not page). Then `MODE=ok` → recovery email. The switch only listens inside the pod, so it needs `kubectl exec`: IAM + RBAC. |
 | 5 | **Argo CD**: `make argocd` → localhost:8080 | Five apps, Synced and Healthy. Self-heal: `kubectl -n uptime scale deploy/uptime --replicas=1` is reverted in seconds. |

@@ -237,6 +237,8 @@ section 3.
 What survives a teardown, on purpose or harmlessly:
 
 - **Kept on purpose:** the bootstrap layer (state bucket, DNS zone, CI roles).
+- **Deleted with the stack:** the ALB access logs (the bucket empties itself on destroy). Copy them
+  out first if you need them: `aws s3 sync s3://$(terraform -chdir=terraform output -raw alb_logs_bucket) ./alb-logs`.
 - **Left behind, harmless:** ExternalDNS's `A`/`AAAA`/`TXT` records point at the deleted load
   balancer until the next build takes them over. Synthetics also leaves its canary's
   `/aws/lambda/cwsyn-…` log group.
