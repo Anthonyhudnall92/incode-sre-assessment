@@ -298,13 +298,17 @@ works in **GovCloud** (`aws-us-gov`).
 | Admin UIs private, no SSO | Managed Grafana and Argo CD SSO would need an identity provider; the IAM Identity Center visible here is the organization's corporate directory, out of scope for this account | Amazon Cognito user pool with mandatory TOTP MFA, OIDC login in Argo CD and Grafana, read-only roles for viewers, ALB `authenticate-cognito` + WAF IP allowlist |
 | ADOT, Grafana and controller images pinned by version tag, not digest | Upstream charts set tags | Pin by digest in values; admission policy to require digests |
 | Managed Prometheus and the canary bucket use AWS-owned / S3-managed keys | Metrics and canary results hold counts, timings and status codes, no customer data | Customer-managed KMS keys |
+| ALB access-log bucket uses S3-managed keys | ALB log delivery supports SSE-S3 only | Accept, or forward logs to an SSE-KMS bucket or log store |
+| Base image carries HIGH CVEs with no fix available (Debian `sqlite3`, `util-linux`, `glibc`, `zlib`, as reported by Inspector) | No patched package exists yet; `release.sh` refuses CRITICALs. The app never uses `sqlite3` and never decompresses response bodies (`zlib`); `glibc` does resolve user-submitted host names, so its CVEs are the ones to watch | Distroless or Chainguard Python base, rebuilt automatically when fixes land |
 | In-cluster Grafana | No SSO available (above); data stays outside the cluster | Amazon Managed Grafana once an identity provider is available |
 
 ---
 
 ## Threat model: what a compromise could reach
 
-**Exposed to the internet:** the app's ALB (behind WAF) and nothing else.
+**Exposed to the internet:** the app's ALB (behind WAF) and nothing else. On it, the board, its API
+and the health checks; `/metrics` and `/internal/` answer 404 (WAF, then the app), so metrics are
+only readable from inside the cluster.
 
 ### The app pod (the only internet-facing workload)
 

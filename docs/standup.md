@@ -180,6 +180,7 @@ curl -s https://<domain>/api/monitors | jq '.monitors[] | {name, ok: .last.ok}'
 curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'Content-Type: application/json' \
   -d '{"url":"http://169.254.169.254/"}' https://<domain>/api/monitors      # 403 (WAF)
 scripts/ssrf-probe.sh https://<domain>             # refused: 25  not refused: 0
+curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/metrics   # 404: in-cluster only
 aws s3 ls "s3://$(terraform -chdir=terraform output -raw alb_logs_bucket)/alb/" --recursive | tail -2   # ALB logs, every 5 min
 
 aws cloudwatch describe-alarms --query 'MetricAlarms[].[AlarmName,StateValue]' --output text
