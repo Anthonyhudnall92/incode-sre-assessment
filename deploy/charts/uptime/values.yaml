@@ -42,3 +42,7 @@ ingress:
   host: ""
   certificateArn: ""
   wafAclArn: ""
+  # Optional. With a bucket, the ALB writes its access logs there.
+  accessLogs:
+    bucket: ""
+    prefix: ""

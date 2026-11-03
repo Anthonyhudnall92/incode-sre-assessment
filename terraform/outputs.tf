@@ -56,6 +56,14 @@ output "waf_web_acl_arn" {
   value = module.app_platform.waf_web_acl_arn
 }
 
+output "alb_logs_bucket" {
+  value = module.app_platform.alb_logs_bucket
+}
+
+output "alb_logs_prefix" {
+  value = module.app_platform.alb_logs_prefix
+}
+
 output "certificate_arn" {
   value = module.app_platform.certificate_arn
 }

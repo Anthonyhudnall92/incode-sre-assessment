@@ -153,6 +153,11 @@ locals {
                 host           = local.domain
                 certificateArn = local.main.certificate_arn
                 wafAclArn      = local.main.waf_web_acl_arn
+                # Empty until the main stack has created the bucket.
+                accessLogs = {
+                  bucket = try(local.main.alb_logs_bucket, "")
+                  prefix = try(local.main.alb_logs_prefix, "")
+                }
               }
             }
           }

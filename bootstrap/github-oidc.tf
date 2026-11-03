@@ -833,13 +833,16 @@ data "aws_iam_policy_document" "github_apply_observability" {
     resources = ["${local.arn_prefix}:lambda:${var.region}:*:layer:*"]
   }
 
-  # The canary's artifact bucket only (never the state bucket).
+  # The canary's artifact bucket and the ALB access-log bucket only (never
+  # the state bucket).
   statement {
-    sid     = "CanaryBucket"
+    sid     = "StackBuckets"
     actions = ["s3:*"]
     resources = [
       "${local.arn_prefix}:s3:::${local.stack}-canary-*",
       "${local.arn_prefix}:s3:::${local.stack}-canary-*/*",
+      "${local.arn_prefix}:s3:::${local.stack}-alb-logs-*",
+      "${local.arn_prefix}:s3:::${local.stack}-alb-logs-*/*",
     ]
   }
 

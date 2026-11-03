@@ -199,6 +199,7 @@ alarms live in AWS services, not in the cluster; an external canary watches the 
 |---|---|---|
 | App metrics (requests, latency, checks, `db_up`) | **Amazon Managed Prometheus**, written by the ADOT collector (SigV4, IRSA) | Yes |
 | Logs: app JSON, EKS control plane incl. **audit**, VPC flow, RDS, WAF | **CloudWatch Logs**, KMS-encrypted | Yes |
+| ALB access logs (status, target, timings, TLS version per request) | **S3**, SSE-S3 (the only encryption ALB delivery supports), TLS-only policy, expire with the log retention | Yes |
 | Node and pod metrics | CloudWatch **Container Insights** | Yes |
 | Alarms → email | CloudWatch alarms → encrypted SNS topic | Yes |
 | Public URL, checked like a visitor (internet → WAF → ALB → app) | **Synthetics canary**, outside the VPC, every 5 minutes | Yes |
@@ -228,8 +229,9 @@ alarms live in AWS services, not in the cluster; an external canary watches the 
 - **NetworkPolicy** (enforced natively by the VPC CNI): default deny in and out; the app may only
   receive 8080 from the VPC, and only send DNS to CoreDNS, 5432 to the database subnets, and 443
   to AWS APIs. IMDS is explicitly excluded.
-- **WAF:** AWS Common and Known-Bad-Inputs rule groups plus a per-IP rate limit, with logging
-  (Authorization and Cookie headers redacted).
+- **WAF:** AWS Common and Known-Bad-Inputs rule groups, a per-IP rate limit, and a tighter one on
+  adding sites (10 per IP per 10 minutes, answered with 429) so one visitor cannot fill the board.
+  Logging with Authorization and Cookie headers redacted.
 - **IMDSv2 with hop limit 1:** pods cannot reach node credentials.
 - **Image scanning:** ECR scan-on-push, and `release.sh` refuses to pin an image with CRITICAL
   findings. Trivy in CI.
@@ -239,7 +241,8 @@ alarms live in AWS services, not in the cluster; an external canary watches the 
   unsafely. Add-ons are now pinned, and upgrades are reviewed PRs with a plan.
 - **SSRF-safe checker.** Users submit URLs, so every check is public-address-only, pinned to the
   validated IP, redirect-revalidated, GET/HEAD only. NetworkPolicy and WAF's SSRF rule are the
-  second and third layers.
+  second and third layers. `scripts/ssrf-probe.sh https://<domain>` sends 25 disguised internal
+  addresses to the live board and shows which layer refused each one.
 
 ### GitOps / CI
 
@@ -312,7 +315,7 @@ works in **GovCloud** (`aws-us-gov`).
 - **Host:** non-root, no capabilities, read-only filesystem, seccomp, PSA `restricted`.
   Escaping needs a kernel/runtime vulnerability.
 - **Data:** full access to the demo database, because the app uses the master user (see exceptions).
-- **Detection:** WAF logs, EKS audit log, VPC flow logs, DB-error and 5xx alarms.
+- **Detection:** WAF and ALB access logs, EKS audit log, VPC flow logs, DB-error and 5xx alarms.
 
 ### Everything else
 
